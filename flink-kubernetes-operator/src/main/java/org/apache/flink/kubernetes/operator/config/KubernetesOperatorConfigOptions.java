@@ -21,6 +21,7 @@ package org.apache.flink.kubernetes.operator.config;
 import org.apache.flink.annotation.docs.Documentation;
 import org.apache.flink.configuration.ConfigOption;
 import org.apache.flink.configuration.ConfigOptions;
+import org.apache.flink.configuration.description.Description;
 import org.apache.flink.core.execution.SavepointFormatType;
 import org.apache.flink.kubernetes.operator.api.status.CheckpointType;
 
@@ -32,6 +33,8 @@ import io.javaoperatorsdk.operator.api.reconciler.Constants;
 import java.time.Duration;
 import java.util.HashMap;
 import java.util.Map;
+
+import static org.apache.flink.configuration.description.TextElement.code;
 
 /** This class holds configuration constants used by flink operator. */
 public class KubernetesOperatorConfigOptions {
@@ -654,4 +657,66 @@ public class KubernetesOperatorConfigOptions {
                     .defaultValue(Duration.ofMinutes(-1))
                     .withDescription(
                             "How often to retrieve Kubernetes cluster resource usage information. This information is used to avoid running out of cluster resources when scaling up resources. Negative values disable the feature.");
+
+    public static final ConfigOption<String> STATE_STORE_TYPE =
+            operatorConfig("state-store.type")
+                    .stringType()
+                    .defaultValue("JDBC")
+                    .withDescription("autoscaler store type: MEMORY, JDBC, KUBERNETES.");
+
+    public static final ConfigOption<String> EVENT_HANDLER_TYPE =
+            operatorConfig("event-handler.type")
+                    .stringType()
+                    .defaultValue("JDBC")
+                    .withDescription("autoscaler store type: LOGGING, JDBC, KUBERNETES.");
+
+    public static final ConfigOption<String> JDBC_URL =
+            operatorConfig("jdbc.url")
+                    .stringType()
+                    .noDefaultValue()
+                    .withDescription(
+                            Description.builder()
+                                    .text(
+                                            "The jdbc url when %s or %s has been set to %s, such as: %s.",
+                                            code(STATE_STORE_TYPE.key()),
+                                            code(EVENT_HANDLER_TYPE.key()),
+                                            code("JDBC"),
+                                            code("jdbc:mysql://localhost:3306/flink_autoscaler"))
+                                    .linebreak()
+                                    .text(
+                                            "This option is required when using JDBC state store or JDBC event handler.")
+                                    .build());
+
+    public static final ConfigOption<String> JDBC_USERNAME =
+            operatorConfig("jdbc.username")
+                    .stringType()
+                    .noDefaultValue()
+                    .withDescription(
+                            Description.builder()
+                                    .text(
+                                            "The jdbc username when %s or %s has been set to %s.",
+                                            code(STATE_STORE_TYPE.key()),
+                                            code(EVENT_HANDLER_TYPE.key()),
+                                            code("JDBC"))
+                                    .build());
+
+    public static final ConfigOption<String> JDBC_PASSWORD_ENV_VARIABLE =
+            operatorConfig("jdbc.password")
+                    .stringType()
+                    .defaultValue("JDBC_PWD")
+                    .withDescription(
+                            Description.builder()
+                                    .text(
+                                            "The jdbc password",
+                                            code(STATE_STORE_TYPE.key()),
+                                            code(EVENT_HANDLER_TYPE.key()),
+                                            code("JDBC"))
+                                    .build());
+    public static final ConfigOption<Duration> JDBC_EVENT_HANDLER_TTL =
+            operatorConfig("jdbc.event-handler.ttl")
+                    .durationType()
+                    .defaultValue(Duration.ofDays(90))
+                    .withDescription(
+                            "The time to live based on create time for the JDBC event handler records. "
+                                    + "When the config is set as '0', the ttl strategy for the records would be disabled.");
 }

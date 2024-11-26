@@ -80,6 +80,8 @@ public class TestingFlinkDeploymentController
     @Getter private StatusRecorder<FlinkDeployment, FlinkDeploymentStatus> statusRecorder;
     @Getter private CanaryResourceManager<FlinkDeployment> canaryResourceManager;
 
+    @Getter private Configuration conf;
+
     private Map<ResourceID, Tuple2<FlinkDeploymentSpec, Long>> currentGenerations = new HashMap<>();
 
     public TestingFlinkDeploymentController(
@@ -102,6 +104,7 @@ public class TestingFlinkDeploymentController
                         statusRecorder,
                         AutoscalerFactory.create(
                                 flinkService.getKubernetesClient(),
+                                conf,
                                 eventRecorder,
                                 new ClusterResourceManager(
                                         Duration.ZERO, flinkService.getKubernetesClient())));
