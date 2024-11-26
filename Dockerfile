@@ -25,12 +25,13 @@ WORKDIR /app
 
 COPY . .
 
-RUN --mount=type=cache,target=/root/.m2 mvn -ntp clean install -pl flink-kubernetes-standalone,flink-kubernetes-operator-api,flink-kubernetes-operator,flink-autoscaler,flink-kubernetes-webhook -DskipTests=$SKIP_TESTS -Dfabric8.httpclient.impl="$HTTP_CLIENT"
+RUN --mount=type=cache,target=/root/.m2 mvn -ntp clean install -pl flink-autoscaler-plugin-jdbc,flink-kubernetes-standalone,flink-kubernetes-operator-api,flink-kubernetes-operator,flink-autoscaler,flink-kubernetes-webhook -DskipTests=$SKIP_TESTS -Dfabric8.httpclient.impl="$HTTP_CLIENT"
 
 RUN cd /app/tools/license; mkdir jars; cd jars; \
     cp /app/flink-kubernetes-operator/target/flink-kubernetes-operator-*-shaded.jar . && \
     cp /app/flink-kubernetes-webhook/target/flink-kubernetes-webhook-*-shaded.jar . && \
     cp /app/flink-kubernetes-standalone/target/flink-kubernetes-standalone-*.jar . && \
+    cp /app/flink-autoscaler-plugin-jdbc/target/flink-autoscaler-plugin-jdbc-*.jar . && \
     cp -r /app/flink-kubernetes-operator/target/plugins ./plugins && \
     cd ../ && ./collect_license_files.sh ./jars ./licenses-output
 
@@ -38,9 +39,10 @@ RUN cd /app/tools/license; mkdir jars; cd jars; \
 FROM eclipse-temurin:${JAVA_VERSION}-jre-jammy
 ENV FLINK_HOME=/opt/flink
 ENV FLINK_PLUGINS_DIR=$FLINK_HOME/plugins
-ENV OPERATOR_VERSION=1.10-SNAPSHOT
+ENV OPERATOR_VERSION=1.10.1-SNAPSHOT
 ENV OPERATOR_JAR=flink-kubernetes-operator-$OPERATOR_VERSION-shaded.jar
 ENV WEBHOOK_JAR=flink-kubernetes-webhook-$OPERATOR_VERSION-shaded.jar
+ENV AUTOSCALER_PLUGIN_JDBC_JAR=flink-autoscaler-plugin-jdbc-$OPERATOR_VERSION.jar
 ENV KUBERNETES_STANDALONE_JAR=flink-kubernetes-standalone-$OPERATOR_VERSION.jar
 
 ENV OPERATOR_LIB=$FLINK_HOME/operator-lib
@@ -55,6 +57,8 @@ RUN chown -R flink:flink $FLINK_HOME
 COPY --chown=flink:flink --from=build /app/flink-kubernetes-operator/target/$OPERATOR_JAR .
 COPY --chown=flink:flink --from=build /app/flink-kubernetes-webhook/target/$WEBHOOK_JAR .
 COPY --chown=flink:flink --from=build /app/flink-kubernetes-standalone/target/$KUBERNETES_STANDALONE_JAR .
+COPY --chown=flink:flink --from=build /app/flink-autoscaler-plugin-jdbc/target/$AUTOSCALER_PLUGIN_JDBC_JAR .
+COPY --chown=flink:flink --from=build /app/flink-autoscaler-plugin-jdbc/target/dependency/* $OPERATOR_LIB
 COPY --chown=flink:flink --from=build /app/flink-kubernetes-operator/target/plugins $FLINK_HOME/plugins
 COPY --chown=flink:flink --from=build /app/tools/license/licenses-output/NOTICE .
 COPY --chown=flink:flink --from=build /app/tools/license/licenses-output/licenses ./licenses

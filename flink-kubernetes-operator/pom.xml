@@ -23,7 +23,7 @@ under the License.
     <parent>
         <groupId>org.apache.flink</groupId>
         <artifactId>flink-kubernetes-operator-parent</artifactId>
-        <version>1.10-SNAPSHOT</version>
+        <version>1.10.1-SNAPSHOT</version>
         <relativePath>..</relativePath>
     </parent>
 
@@ -223,6 +223,12 @@ under the License.
             <artifactId>junit-jupiter-params</artifactId>
             <scope>test</scope>
         </dependency>
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-autoscaler-plugin-jdbc</artifactId>
+            <version>1.10.1-SNAPSHOT</version>
+            <scope>compile</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -334,6 +340,12 @@ under the License.
                             <artifactId>flink-metrics-jmx</artifactId>
                             <version>${flink.version}</version>
                             <outputDirectory>${plugins.tmp.dir}/flink-metrics-jmx</outputDirectory>
+                        </artifactItem>
+                        <artifactItem>
+                            <groupId>org.apache.flink</groupId>
+                            <artifactId>flink-autoscaler-plugin-jdbc</artifactId>
+                            <version>1.10.1-SNAPSHOT</version>
+                            <outputDirectory>${plugins.tmp.dir}/flink-autoscaler-plugin-jdbc</outputDirectory>
                         </artifactItem>
                     </artifactItems>
                 </configuration>
