@@ -105,6 +105,8 @@ public class ScalingExecutor<KEY, Context extends JobAutoScalerContext<KEY>> {
         var conf = context.getConfiguration();
         var restartTime = scalingTracking.getMaxRestartTimeOrDefault(conf);
 
+        var neverScaled = autoScalerStateStore.getConfigChanges(context).getOverrides().isEmpty();
+
         var scalingSummaries =
                 computeScalingSummary(
                         context,
@@ -115,8 +117,13 @@ public class ScalingExecutor<KEY, Context extends JobAutoScalerContext<KEY>> {
                         delayedScaleDown);
 
         if (scalingSummaries.isEmpty()) {
-            LOG.info("All job vertices are currently running at their target parallelism.");
-            return false;
+            if (!neverScaled) {
+                LOG.info("All job vertices are currently running at their target parallelism.");
+                return false;
+            }
+            LOG.info(
+                    "All job vertices are currently running at their target parallelism, "
+                            + "but the job has never scaled, so continue to check config overrides.");
         }
 
         updateRecommendedParallelism(evaluatedMetrics.getVertexMetrics(), scalingSummaries);
