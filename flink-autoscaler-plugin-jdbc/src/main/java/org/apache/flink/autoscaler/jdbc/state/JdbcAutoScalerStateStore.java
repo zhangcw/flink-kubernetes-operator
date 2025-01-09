@@ -19,10 +19,7 @@ package org.apache.flink.autoscaler.jdbc.state;
 
 import org.apache.flink.annotation.Experimental;
 import org.apache.flink.annotation.VisibleForTesting;
-import org.apache.flink.autoscaler.DelayedScaleDown;
-import org.apache.flink.autoscaler.JobAutoScalerContext;
-import org.apache.flink.autoscaler.ScalingSummary;
-import org.apache.flink.autoscaler.ScalingTracking;
+import org.apache.flink.autoscaler.*;
 import org.apache.flink.autoscaler.metrics.CollectedMetrics;
 import org.apache.flink.autoscaler.state.AutoScalerStateStore;
 import org.apache.flink.autoscaler.tuning.ConfigChanges;
@@ -42,18 +39,9 @@ import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 
 import java.time.Instant;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Optional;
-import java.util.SortedMap;
-import java.util.TreeMap;
+import java.util.*;
 
-import static org.apache.flink.autoscaler.jdbc.state.StateType.COLLECTED_METRICS;
-import static org.apache.flink.autoscaler.jdbc.state.StateType.CONFIG_OVERRIDES;
-import static org.apache.flink.autoscaler.jdbc.state.StateType.DELAYED_SCALE_DOWN;
-import static org.apache.flink.autoscaler.jdbc.state.StateType.PARALLELISM_OVERRIDES;
-import static org.apache.flink.autoscaler.jdbc.state.StateType.SCALING_HISTORY;
-import static org.apache.flink.autoscaler.jdbc.state.StateType.SCALING_TRACKING;
+import static org.apache.flink.autoscaler.jdbc.state.StateType.*;
 
 /**
  * The state store which persists its state in JDBC related database.
@@ -279,6 +267,16 @@ public class JdbcAutoScalerStateStore<KEY, Context extends JobAutoScalerContext<
         return YAML_MAPPER.readValue(scalingHistory, new TypeReference<>() {});
     }
 
+    protected static String serializeExceptionHistory(List<ExceptionHistory> exceptionHistory)
+            throws Exception {
+        return YAML_MAPPER.writeValueAsString(exceptionHistory);
+    }
+
+    private static List<ExceptionHistory> deserializeExceptionHistory(String exceptionHistory)
+            throws JacksonException {
+        return YAML_MAPPER.readValue(exceptionHistory, new TypeReference<>() {});
+    }
+
     protected static String serializeScalingTracking(ScalingTracking scalingTracking)
             throws Exception {
         return YAML_MAPPER.writeValueAsString(scalingTracking);
@@ -338,5 +336,33 @@ public class JdbcAutoScalerStateStore<KEY, Context extends JobAutoScalerContext<
         Map<JobVertexID, Instant> firstTriggerTime =
                 YAML_MAPPER.readValue(delayedScaleDown, new TypeReference<>() {});
         return new DelayedScaleDown(firstTriggerTime);
+    }
+
+    @Override
+    public List<ExceptionHistory> getExceptionHistory(Context jobContext) throws Exception {
+        List<ExceptionHistory> exceptionHistory = new ArrayList<>();
+        Optional<String> serializedExceptionHistory =
+                jdbcStateStore.getSerializedState(getSerializeKey(jobContext), EXCEPTION_HISTORY);
+        if (serializedExceptionHistory.isPresent()) {
+            try {
+                exceptionHistory = deserializeExceptionHistory(serializedExceptionHistory.get());
+            } catch (JacksonException e) {
+                LOG.error(
+                        "Could not deserialize exception history, possibly the format changed. Discarding...",
+                        e);
+                jdbcStateStore.removeSerializedState(
+                        getSerializeKey(jobContext), EXCEPTION_HISTORY);
+            }
+        }
+        return exceptionHistory;
+    }
+
+    @Override
+    public void storeExceptionHistory(Context jobContext, List<ExceptionHistory> exceptionHistory)
+            throws Exception {
+        jdbcStateStore.putSerializedState(
+                getSerializeKey(jobContext),
+                EXCEPTION_HISTORY,
+                serializeExceptionHistory(exceptionHistory));
     }
 }

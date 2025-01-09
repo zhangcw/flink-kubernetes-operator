@@ -17,25 +17,35 @@
 
 package org.apache.flink.autoscaler;
 
-import org.apache.flink.autoscaler.event.AutoScalerEventHandler;
-import org.apache.flink.autoscaler.state.AutoScalerStateStore;
+import lombok.Data;
+import lombok.NoArgsConstructor;
 
-/** An autoscaler implementation which does nothing. */
-public class NoopJobAutoscaler<KEY, Context extends JobAutoScalerContext<KEY>>
-        implements JobAutoScaler<KEY, Context> {
-    @Override
-    public void scale(Context context) throws Exception {}
+@Data
+@NoArgsConstructor
+public class ExceptionHistory {
 
-    @Override
-    public void cleanup(KEY jobKey) {}
+    private long timestamp;
+    private Type type;
+    private Reason reason;
+    private String message;
+    private String stacktrace;
 
-    @Override
-    public AutoScalerStateStore<KEY, Context> getStateStore() {
-        return null;
+    public ExceptionHistory(
+            Type type, Reason reason, String message, String stacktrace, long timestamp) {
+        this.type = type;
+        this.reason = reason;
+        this.message = message;
+        this.stacktrace = stacktrace;
+        this.timestamp = timestamp;
     }
 
-    @Override
-    public AutoScalerEventHandler<KEY, Context> getEventHandler() {
-        return null;
+    public enum Type {
+        Warning,
+        Error
+    }
+
+    public enum Reason {
+        OutOfMemory,
+        Exception
     }
 }

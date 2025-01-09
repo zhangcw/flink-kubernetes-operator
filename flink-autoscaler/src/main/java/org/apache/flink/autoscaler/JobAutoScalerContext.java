@@ -61,7 +61,7 @@ public class JobAutoScalerContext<KEY> {
      */
     @Getter private final Configuration configuration;
 
-    @Getter private final MetricGroup metricGroup;
+    @Nullable @Getter private final MetricGroup metricGroup;
 
     @ToString.Exclude
     private final SupplierWithException<RestClusterClient<String>, Exception> restClientSupplier;

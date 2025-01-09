@@ -22,6 +22,7 @@ import org.apache.flink.kubernetes.operator.api.FlinkDeployment;
 import org.apache.flink.kubernetes.operator.api.FlinkStateSnapshot;
 import org.apache.flink.kubernetes.operator.api.status.FlinkDeploymentStatus;
 import org.apache.flink.kubernetes.operator.api.status.JobManagerDeploymentStatus;
+import org.apache.flink.kubernetes.operator.autoscaler.AutoScalerStateHolder;
 import org.apache.flink.kubernetes.operator.exception.DeploymentFailedException;
 import org.apache.flink.kubernetes.operator.exception.ReconciliationException;
 import org.apache.flink.kubernetes.operator.exception.UpgradeFailureException;
@@ -131,6 +132,9 @@ public class FlinkDeploymentController
         }
 
         LOG.debug("Starting reconciliation");
+
+        AutoScalerStateHolder.setStateStore(reconcilerFactory.getAutoscaler().getStateStore());
+        AutoScalerStateHolder.setEventHandler(reconcilerFactory.getAutoscaler().getEventHandler());
 
         statusRecorder.updateStatusFromCache(flinkApp);
         FlinkDeployment previousDeployment = ReconciliationUtils.clone(flinkApp);

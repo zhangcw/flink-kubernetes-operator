@@ -19,19 +19,28 @@ package org.apache.flink.kubernetes.operator.observer;
 
 import org.apache.flink.api.common.JobID;
 import org.apache.flink.api.common.JobStatus;
+import org.apache.flink.autoscaler.ExceptionHistory;
 import org.apache.flink.kubernetes.operator.api.AbstractFlinkResource;
 import org.apache.flink.kubernetes.operator.api.FlinkSessionJob;
 import org.apache.flink.kubernetes.operator.api.spec.JobState;
 import org.apache.flink.kubernetes.operator.api.spec.UpgradeMode;
 import org.apache.flink.kubernetes.operator.api.status.ReconciliationState;
+import org.apache.flink.kubernetes.operator.autoscaler.AutoScalerStateHolder;
 import org.apache.flink.kubernetes.operator.controller.FlinkResourceContext;
 import org.apache.flink.kubernetes.operator.reconciler.ReconciliationUtils;
 import org.apache.flink.kubernetes.operator.utils.EventRecorder;
 import org.apache.flink.runtime.client.JobStatusMessage;
+import org.apache.flink.runtime.rest.messages.EmptyRequestBody;
+import org.apache.flink.runtime.rest.messages.JobExceptionsHeaders;
+import org.apache.flink.runtime.rest.messages.JobExceptionsInfoWithHistory;
+import org.apache.flink.runtime.rest.messages.job.JobExceptionsMessageParameters;
+import org.apache.flink.runtime.rest.messages.job.UpperLimitExceptionParameter;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.TimeoutException;
 
 import static org.apache.flink.kubernetes.operator.utils.FlinkResourceExceptionUtils.updateFlinkResourceException;
@@ -77,6 +86,10 @@ public class JobStatusObserver<R extends AbstractFlinkResource<?, ?>> {
                                     JobID.fromHexString(jobStatus.getJobId()));
 
             if (newJobStatusOpt.isPresent()) {
+
+                // handle oom events
+                observeJobExceptions(ctx, newJobStatusOpt.get());
+
                 updateJobStatus(ctx, newJobStatusOpt.get());
                 ReconciliationUtils.checkAndUpdateStableSpec(resource.getStatus());
                 return true;
@@ -223,6 +236,57 @@ public class JobStatusObserver<R extends AbstractFlinkResource<?, ?>> {
             } catch (Exception e) {
                 LOG.warn("Failed to request the job result", e);
             }
+        }
+    }
+
+    private void observeJobExceptions(
+            FlinkResourceContext<R> ctx, JobStatusMessage clusterJobStatus) {
+        JobStatus previousStatus = ctx.getResource().getStatus().getJobStatus().getState();
+        JobID jobId = JobID.fromHexString(ctx.getResource().getStatus().getJobStatus().getJobId());
+        try {
+            var parameters = new JobExceptionsMessageParameters();
+            parameters.jobPathParameter.resolve(jobId);
+            for (var queryParam : parameters.getQueryParameters()) {
+                if (queryParam instanceof UpperLimitExceptionParameter) {
+                    queryParam.resolveFromString("5");
+                }
+            }
+
+            JobExceptionsInfoWithHistory exceptionsInfoWithHistory =
+                    ctx.getFlinkService()
+                            .getClusterClient(ctx.getObserveConfig())
+                            .sendRequest(
+                                    JobExceptionsHeaders.getInstance(),
+                                    parameters,
+                                    EmptyRequestBody.getInstance())
+                            .get();
+
+            List<ExceptionHistory> exceptionHistory = new ArrayList<>();
+            for (var entry : exceptionsInfoWithHistory.getExceptionHistory().getEntries()) {
+                String exceptionName = entry.getExceptionName();
+                String stacktrace = entry.getStacktrace();
+                String message = stacktrace.split("\\r?\\n")[0];
+
+                if (exceptionName.contains("OutOfMemoryError")
+                        || stacktrace.contains("reason=OOMKilled")) {
+                    ExceptionHistory.Type exceptionType = ExceptionHistory.Type.Error;
+                    ExceptionHistory.Reason exceptionReason = ExceptionHistory.Reason.OutOfMemory;
+
+                    exceptionHistory.add(
+                            new ExceptionHistory(
+                                    exceptionType,
+                                    exceptionReason,
+                                    message,
+                                    stacktrace,
+                                    entry.getTimestamp()));
+                }
+            }
+            var autoScalerCtx = ctx.getJobAutoScalerContext();
+            var stateStore = AutoScalerStateHolder.getStateStore();
+            stateStore.storeExceptionHistory(autoScalerCtx, exceptionHistory);
+            stateStore.flush(autoScalerCtx);
+        } catch (Exception e) {
+            LOG.warn("Failed to request the job result", e);
         }
     }
 }

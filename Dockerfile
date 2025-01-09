@@ -25,7 +25,7 @@ WORKDIR /app
 
 COPY . .
 
-RUN --mount=type=cache,target=/root/.m2 mvn -ntp clean install -pl flink-autoscaler-plugin-jdbc,flink-kubernetes-standalone,flink-kubernetes-operator-api,flink-kubernetes-operator,flink-autoscaler,flink-kubernetes-webhook -DskipTests=$SKIP_TESTS -Dfabric8.httpclient.impl="$HTTP_CLIENT"
+RUN --mount=type=cache,target=/root/.m2 mvn -ntp clean install -U -pl flink-autoscaler-plugin-jdbc,flink-kubernetes-standalone,flink-kubernetes-operator-api,flink-kubernetes-operator,flink-autoscaler,flink-kubernetes-webhook -Drat.skip=true -DskipTests=$SKIP_TESTS -Dfabric8.httpclient.impl="$HTTP_CLIENT"
 
 RUN cd /app/tools/license; mkdir jars; cd jars; \
     cp /app/flink-kubernetes-operator/target/flink-kubernetes-operator-*-shaded.jar . && \
@@ -60,6 +60,9 @@ COPY --chown=flink:flink --from=build /app/flink-kubernetes-standalone/target/$K
 COPY --chown=flink:flink --from=build /app/flink-autoscaler-plugin-jdbc/target/$AUTOSCALER_PLUGIN_JDBC_JAR .
 COPY --chown=flink:flink --from=build /app/flink-autoscaler-plugin-jdbc/target/dependency/* $OPERATOR_LIB
 COPY --chown=flink:flink --from=build /app/flink-kubernetes-operator/target/plugins $FLINK_HOME/plugins
+#RUN mkdir -p $FLINK_HOME/plugins/flink-kubernetes-operator-plugins
+#COPY --chown=flink:flink --from=build /app/flink-kubernetes-operator-plugins/target/flink-kubernetes-operator-plugins-*.jar $FLINK_HOME/plugins/flink-kubernetes-operator-plugins
+#COPY --chown=flink:flink --from=build /app/flink-kubernetes-operator-plugins/target/dependency/* $OPERATOR_LIB
 COPY --chown=flink:flink --from=build /app/tools/license/licenses-output/NOTICE .
 COPY --chown=flink:flink --from=build /app/tools/license/licenses-output/licenses ./licenses
 COPY --chown=flink:flink --from=build /app/LICENSE ./LICENSE

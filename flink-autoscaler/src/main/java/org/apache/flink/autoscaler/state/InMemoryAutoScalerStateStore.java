@@ -17,10 +17,7 @@
 
 package org.apache.flink.autoscaler.state;
 
-import org.apache.flink.autoscaler.DelayedScaleDown;
-import org.apache.flink.autoscaler.JobAutoScalerContext;
-import org.apache.flink.autoscaler.ScalingSummary;
-import org.apache.flink.autoscaler.ScalingTracking;
+import org.apache.flink.autoscaler.*;
 import org.apache.flink.autoscaler.metrics.CollectedMetrics;
 import org.apache.flink.autoscaler.tuning.ConfigChanges;
 import org.apache.flink.runtime.jobgraph.JobVertexID;
@@ -28,11 +25,7 @@ import org.apache.flink.runtime.jobgraph.JobVertexID;
 import javax.annotation.Nonnull;
 
 import java.time.Instant;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Optional;
-import java.util.SortedMap;
-import java.util.TreeMap;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -182,5 +175,17 @@ public class InMemoryAutoScalerStateStore<KEY, Context extends JobAutoScalerCont
         scalingHistoryStore.remove(jobKey);
         collectedMetricsStore.remove(jobKey);
         parallelismOverridesStore.remove(jobKey);
+    }
+
+    @Override
+    public List<ExceptionHistory> getExceptionHistory(Context jobContext) throws Exception {
+        // TODO: implement this
+        return new ArrayList<>();
+    }
+
+    @Override
+    public void storeExceptionHistory(Context jobContext, List<ExceptionHistory> exceptionHistory)
+            throws Exception {
+        // TODO
     }
 }
