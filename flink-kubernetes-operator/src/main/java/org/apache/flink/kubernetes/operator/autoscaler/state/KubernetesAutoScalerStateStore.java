@@ -19,6 +19,7 @@ package org.apache.flink.kubernetes.operator.autoscaler.state;
 
 import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.autoscaler.DelayedScaleDown;
+import org.apache.flink.autoscaler.ExceptionHistory;
 import org.apache.flink.autoscaler.ScalingSummary;
 import org.apache.flink.autoscaler.ScalingTracking;
 import org.apache.flink.autoscaler.metrics.CollectedMetrics;
@@ -40,6 +41,7 @@ import org.apache.flink.shaded.jackson2.org.yaml.snakeyaml.LoaderOptions;
 import io.javaoperatorsdk.operator.processing.event.ResourceID;
 import lombok.SneakyThrows;
 import org.apache.commons.io.IOUtils;
+import org.jetbrains.annotations.NotNull;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -51,12 +53,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
-import java.util.Base64;
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Optional;
-import java.util.SortedMap;
-import java.util.TreeMap;
+import java.util.*;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 
@@ -406,4 +403,17 @@ public class KubernetesAutoScalerStateStore
 
     @Override
     public void close() throws Exception {}
+
+    public void storeExceptionHistory(
+            KubernetesJobAutoScalerContext jobContext, ExceptionHistory exceptionHistory)
+            throws Exception {
+        // TODO
+    }
+
+    @NotNull
+    @Override
+    public ExceptionHistory getExceptionHistory(KubernetesJobAutoScalerContext jobContext)
+            throws Exception {
+        return new ExceptionHistory();
+    }
 }

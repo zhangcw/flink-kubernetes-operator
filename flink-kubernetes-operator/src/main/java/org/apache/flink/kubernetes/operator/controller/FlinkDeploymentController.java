@@ -145,7 +145,11 @@ public class FlinkDeploymentController
         }
 
         try {
+            // set state store in threadLocal for use in observers and remove it after observers
+            //            AutoScalerStateHolder.setStateStore();
+            ctx.setAutoScalerStateStore(reconcilerFactory.getAutoscaler().getStateStore());
             observerFactory.getOrCreate(flinkApp).observe(ctx);
+            //            AutoScalerStateHolder.remove();
             if (!validateDeployment(ctx)) {
                 statusRecorder.patchAndCacheStatus(flinkApp, ctx.getKubernetesClient());
                 return ReconciliationUtils.toUpdateControl(

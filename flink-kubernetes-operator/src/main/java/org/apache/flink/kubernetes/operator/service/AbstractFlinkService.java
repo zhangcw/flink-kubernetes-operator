@@ -61,11 +61,7 @@ import org.apache.flink.runtime.messages.FlinkJobTerminatedWithoutCancellationEx
 import org.apache.flink.runtime.rest.FileUpload;
 import org.apache.flink.runtime.rest.RestClient;
 import org.apache.flink.runtime.rest.handler.async.AsynchronousOperationResult;
-import org.apache.flink.runtime.rest.messages.DashboardConfiguration;
-import org.apache.flink.runtime.rest.messages.EmptyMessageParameters;
-import org.apache.flink.runtime.rest.messages.EmptyRequestBody;
-import org.apache.flink.runtime.rest.messages.JobsOverviewHeaders;
-import org.apache.flink.runtime.rest.messages.TriggerId;
+import org.apache.flink.runtime.rest.messages.*;
 import org.apache.flink.runtime.rest.messages.checkpoints.CheckpointIdPathParameter;
 import org.apache.flink.runtime.rest.messages.checkpoints.CheckpointInfo;
 import org.apache.flink.runtime.rest.messages.checkpoints.CheckpointStatisticDetailsHeaders;
@@ -76,6 +72,7 @@ import org.apache.flink.runtime.rest.messages.checkpoints.CheckpointTriggerHeade
 import org.apache.flink.runtime.rest.messages.checkpoints.CheckpointTriggerRequestBody;
 import org.apache.flink.runtime.rest.messages.checkpoints.CheckpointingStatistics;
 import org.apache.flink.runtime.rest.messages.checkpoints.CheckpointingStatisticsHeaders;
+import org.apache.flink.runtime.rest.messages.job.UpperLimitExceptionParameter;
 import org.apache.flink.runtime.rest.messages.job.metrics.JobMetricsHeaders;
 import org.apache.flink.runtime.rest.messages.job.savepoints.SavepointDisposalRequest;
 import org.apache.flink.runtime.rest.messages.job.savepoints.SavepointDisposalTriggerHeaders;
@@ -1027,6 +1024,29 @@ public abstract class AbstractFlinkService implements FlinkService {
             return responseBody.getMetrics().stream()
                     .map(metric -> Tuple2.of(metric.getId(), metric.getValue()))
                     .collect(Collectors.toMap((t) -> t.f0, (t) -> t.f1));
+        }
+    }
+
+    @Override
+    public JobExceptionsInfoWithHistory getJobExceptionHistory(Configuration conf, String jobId)
+            throws Exception {
+        try (var clusterClient = getClusterClient(conf)) {
+            var jobExceptionHistoryParameters =
+                    JobExceptionsHeaders.getInstance().getUnresolvedMessageParameters();
+            jobExceptionHistoryParameters.jobPathParameter.resolve(JobID.fromHexString(jobId));
+
+            for (var queryParam : jobExceptionHistoryParameters.getQueryParameters()) {
+                if (queryParam instanceof UpperLimitExceptionParameter) {
+                    queryParam.resolveFromString("5");
+                }
+            }
+
+            return clusterClient
+                    .sendRequest(
+                            JobExceptionsHeaders.getInstance(),
+                            jobExceptionHistoryParameters,
+                            EmptyRequestBody.getInstance())
+                    .get(operatorConfig.getFlinkClientTimeout().toSeconds(), TimeUnit.SECONDS);
         }
     }
 

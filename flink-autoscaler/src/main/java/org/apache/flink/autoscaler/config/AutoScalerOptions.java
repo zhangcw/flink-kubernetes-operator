@@ -382,4 +382,17 @@ public class AutoScalerOptions {
                                             "scaling.key-group.partitions.adjust.mode"))
                             .withDescription(
                                     "How to adjust the parallelism of Source vertex or upstream shuffle is keyBy");
+    public static final ConfigOption<MemorySize> TM_MEMORY_BUDGET =
+            autoScalerConfig("budget.taskmanager.memory")
+                    .memoryType()
+                    .defaultValue(MemorySize.parse("5 gb"))
+                    .withFallbackKeys(oldOperatorConfigKey("budget.taskmanager.memory"))
+                    .withDescription("Taskmanager budget of the memory size while tuning memory.");
+
+    public static final ConfigOption<Double> TM_CPU_BUDGET =
+            autoScalerConfig("budget.taskmanager.cpu")
+                    .doubleType()
+                    .defaultValue(2.0)
+                    .withFallbackKeys(oldOperatorConfigKey("budget.taskmanager.cpu"))
+                    .withDescription("Taskmanager budget of the cpu amount while scaling.");
 }

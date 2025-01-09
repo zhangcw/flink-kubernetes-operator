@@ -17,6 +17,9 @@
 
 package org.apache.flink.autoscaler;
 
+import org.apache.flink.autoscaler.event.AutoScalerEventHandler;
+import org.apache.flink.autoscaler.state.AutoScalerStateStore;
+
 /** An autoscaler implementation which does nothing. */
 public class NoopJobAutoscaler<KEY, Context extends JobAutoScalerContext<KEY>>
         implements JobAutoScaler<KEY, Context> {
@@ -25,4 +28,14 @@ public class NoopJobAutoscaler<KEY, Context extends JobAutoScalerContext<KEY>>
 
     @Override
     public void cleanup(Context jobKey) {}
+
+    @Override
+    public AutoScalerStateStore<KEY, Context> getStateStore() {
+        return null;
+    }
+
+    @Override
+    public AutoScalerEventHandler<KEY, Context> getEventHandler() {
+        return null;
+    }
 }

@@ -27,12 +27,14 @@ import org.apache.flink.autoscaler.resources.NoopResourceCheck;
 import org.apache.flink.autoscaler.resources.ResourceCheck;
 import org.apache.flink.autoscaler.state.AutoScalerStateStore;
 import org.apache.flink.autoscaler.topology.JobTopology;
+import org.apache.flink.autoscaler.tuning.ConfigChanges;
 import org.apache.flink.autoscaler.tuning.MemoryTuning;
 import org.apache.flink.autoscaler.utils.CalendarUtils;
 import org.apache.flink.autoscaler.utils.ResourceCheckUtils;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.MemorySize;
 import org.apache.flink.configuration.TaskManagerOptions;
+import org.apache.flink.kubernetes.configuration.KubernetesConfigOptions;
 import org.apache.flink.runtime.instance.SlotSharingGroupId;
 import org.apache.flink.runtime.jobgraph.JobVertexID;
 
@@ -104,9 +106,7 @@ public class ScalingExecutor<KEY, Context extends JobAutoScalerContext<KEY>> {
             throws Exception {
         var conf = context.getConfiguration();
         var restartTime = scalingTracking.getMaxRestartTimeOrDefault(conf);
-
-        var neverScaled = autoScalerStateStore.getConfigChanges(context).getOverrides().isEmpty();
-
+        var neverScaled = autoScalerStateStore.getConfigChanges(context).getOverrides().size() <= 1;
         var scalingSummaries =
                 computeScalingSummary(
                         context,
@@ -156,10 +156,13 @@ public class ScalingExecutor<KEY, Context extends JobAutoScalerContext<KEY>> {
         scalingTracking.addScalingRecord(now, new ScalingRecord());
         autoScalerStateStore.storeScalingTracking(context, scalingTracking);
 
-        autoScalerStateStore.storeParallelismOverrides(
-                context,
+        Map<String, String> parallelismOverrides =
                 getVertexParallelismOverrides(
-                        evaluatedMetrics.getVertexMetrics(), scalingSummaries));
+                        evaluatedMetrics.getVertexMetrics(), scalingSummaries);
+
+        updateTaskmanagerCpuAccordingToParallelism(configOverrides, parallelismOverrides, conf);
+
+        autoScalerStateStore.storeParallelismOverrides(context, parallelismOverrides);
 
         autoScalerStateStore.storeConfigChanges(context, configOverrides);
 
@@ -469,5 +472,30 @@ public class ScalingExecutor<KEY, Context extends JobAutoScalerContext<KEY>> {
     @VisibleForTesting
     void setClock(Clock clock) {
         jobVertexScaler.setClock(clock);
+    }
+
+    private void updateTaskmanagerCpuAccordingToParallelism(
+            ConfigChanges configOverrides,
+            Map<String, String> parallelismOverrides,
+            Configuration conf) {
+        var tmSlots = calculateTaskmanagerSlots(parallelismOverrides, conf);
+        double cpuOverride = 0.1 * tmSlots;
+        cpuOverride = Double.parseDouble(String.format("%.2f", cpuOverride));
+        LOG.debug("Override {}: {}", KubernetesConfigOptions.TASK_MANAGER_CPU, cpuOverride);
+        configOverrides.addOverride(KubernetesConfigOptions.TASK_MANAGER_CPU, cpuOverride);
+    }
+
+    private int calculateTaskmanagerSlots(
+            Map<String, String> parallelismOverrides, Configuration conf) {
+        var maxParallelism = 1;
+        for (Map.Entry<String, String> entry : parallelismOverrides.entrySet()) {
+            var override = Integer.parseInt(entry.getValue());
+            if (override > maxParallelism) {
+                maxParallelism = override;
+            }
+        }
+        var taskSlots = conf.get(TaskManagerOptions.NUM_TASK_SLOTS);
+        var tmNumber = Math.ceil((double) maxParallelism / taskSlots);
+        return (int) Math.ceil((double) maxParallelism / tmNumber);
     }
 }

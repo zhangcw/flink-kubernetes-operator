@@ -18,8 +18,12 @@
 package org.apache.flink.kubernetes.operator.reconciler.deployment;
 
 import org.apache.flink.annotation.VisibleForTesting;
+import org.apache.flink.api.common.JobStatus;
+import org.apache.flink.autoscaler.ExceptionHistory;
 import org.apache.flink.autoscaler.JobAutoScaler;
+import org.apache.flink.autoscaler.tuning.ConfigChanges;
 import org.apache.flink.configuration.Configuration;
+import org.apache.flink.configuration.TaskManagerOptions;
 import org.apache.flink.kubernetes.configuration.KubernetesConfigOptions;
 import org.apache.flink.kubernetes.operator.api.AbstractFlinkResource;
 import org.apache.flink.kubernetes.operator.api.FlinkDeployment;
@@ -42,6 +46,7 @@ import org.apache.flink.kubernetes.operator.utils.EventRecorder;
 import org.apache.flink.kubernetes.operator.utils.FlinkUtils;
 import org.apache.flink.kubernetes.operator.utils.StatusRecorder;
 import org.apache.flink.runtime.jobmanager.HighAvailabilityMode;
+import org.apache.flink.runtime.rest.messages.JobExceptionsInfoWithHistory;
 
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.javaoperatorsdk.operator.api.reconciler.DeleteControl;
@@ -56,7 +61,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-import static org.apache.flink.autoscaler.config.AutoScalerOptions.AUTOSCALER_ENABLED;
+import static org.apache.flink.autoscaler.config.AutoScalerOptions.*;
 
 /**
  * Base class for all Flink resource reconcilers. It contains the general flow of reconciling Flink
@@ -129,6 +134,7 @@ public abstract class AbstractFlinkResourceReconciler<
                 cr.getStatus().getReconciliationStatus().deserializeLastReconciledSpec();
         SPEC currentDeploySpec = cr.getSpec();
 
+        handleExceptionIfExist(ctx);
         applyAutoscaler(ctx);
 
         var reconciliationState = reconciliationStatus.getState();
@@ -556,5 +562,75 @@ public abstract class AbstractFlinkResourceReconciler<
     @VisibleForTesting
     public void setClock(Clock clock) {
         this.clock = clock;
+    }
+
+    private boolean shouldCheckException(FlinkResourceContext<CR> ctx) {
+        // 只有当job正在运行且开启了自动扩缩容才处理异常
+        var observeConfig = ctx.getObserveConfig();
+        var jobState = ctx.getResource().getStatus().getJobStatus().getState();
+        return (jobState == JobStatus.RUNNING
+                        || jobState == JobStatus.RESTARTING
+                        || jobState == JobStatus.CREATED)
+                && observeConfig != null
+                && observeConfig.getOptional(AUTOSCALER_ENABLED).orElse(false)
+                && observeConfig.getOptional(SCALING_ENABLED).orElse(false)
+                && observeConfig.getOptional(MEMORY_TUNING_ENABLED).orElse(false);
+    }
+
+    public void handleExceptionIfExist(FlinkResourceContext<CR> ctx) {
+        if (!shouldCheckException(ctx)) {
+            return;
+        }
+
+        try {
+            JobExceptionsInfoWithHistory exceptionsInfoWithHistory =
+                    ctx.getFlinkService()
+                            .getJobExceptionHistory(
+                                    ctx.getObserveConfig(),
+                                    ctx.getResource().getStatus().getJobStatus().getJobId());
+            for (var entry : exceptionsInfoWithHistory.getExceptionHistory().getEntries()) {
+                String exceptionName = entry.getExceptionName();
+                String stacktrace = entry.getStacktrace();
+                String message = stacktrace.split("\\r?\\n")[0];
+
+                if (exceptionName.contains("OutOfMemoryError")
+                        || stacktrace.contains("reason=OOMKilled")
+                        || stacktrace.contains(
+                                "Caused by: java.lang.OutOfMemoryError: Java heap space")) {
+                    ExceptionHistory exceptionHistory = new ExceptionHistory();
+                    exceptionHistory.addExceptionRecord(
+                            ExceptionHistory.Type.Error,
+                            ExceptionHistory.Reason.OutOfMemory,
+                            message,
+                            stacktrace,
+                            entry.getTimestamp());
+
+                    var autoScalerCtx = ctx.getJobAutoScalerContext();
+                    var stateStore = autoscaler.getStateStore();
+                    stateStore.storeExceptionHistory(autoScalerCtx, exceptionHistory);
+
+                    Map<String, String> configOverrides =
+                            stateStore.getConfigChanges(autoScalerCtx).getOverrides();
+                    if (configOverrides.isEmpty()
+                            || configOverrides.get(TaskManagerOptions.TOTAL_PROCESS_MEMORY.key())
+                                    == null) {
+                        ConfigChanges configChanges = new ConfigChanges();
+                        configOverrides.put(
+                                TaskManagerOptions.TOTAL_PROCESS_MEMORY.key(),
+                                ctx.getResource()
+                                        .getStatus()
+                                        .getReconciliationStatus()
+                                        .deserializeLastStableSpec()
+                                        .getFlinkConfiguration()
+                                        .get(TaskManagerOptions.TOTAL_PROCESS_MEMORY.key()));
+                        configOverrides.forEach(configChanges::addOverride);
+                        stateStore.storeConfigChanges(autoScalerCtx, configChanges);
+                    }
+                    break;
+                }
+            }
+        } catch (Exception e) {
+            LOG.warn("Failed to request the job result", e);
+        }
     }
 }

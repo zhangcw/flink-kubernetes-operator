@@ -19,6 +19,7 @@ package org.apache.flink.autoscaler.state;
 
 import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.autoscaler.DelayedScaleDown;
+import org.apache.flink.autoscaler.ExceptionHistory;
 import org.apache.flink.autoscaler.JobAutoScalerContext;
 import org.apache.flink.autoscaler.ScalingSummary;
 import org.apache.flink.autoscaler.ScalingTracking;
@@ -194,4 +195,15 @@ public class InMemoryAutoScalerStateStore<KEY, Context extends JobAutoScalerCont
 
     @Override
     public void close() throws Exception {}
+
+    public ExceptionHistory getExceptionHistory(Context jobContext) throws Exception {
+        // TODO: implement this
+        return null;
+    }
+
+    @Override
+    public void storeExceptionHistory(Context jobContext, ExceptionHistory exceptionHistory)
+            throws Exception {
+        // TODO
+    }
 }

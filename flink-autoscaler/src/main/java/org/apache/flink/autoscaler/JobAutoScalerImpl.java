@@ -27,9 +27,12 @@ import org.apache.flink.autoscaler.metrics.EvaluatedMetrics;
 import org.apache.flink.autoscaler.realizer.ScalingRealizer;
 import org.apache.flink.autoscaler.state.AutoScalerStateStore;
 import org.apache.flink.autoscaler.tuning.ConfigChanges;
+import org.apache.flink.configuration.MemorySize;
 import org.apache.flink.configuration.PipelineOptions;
+import org.apache.flink.configuration.TaskManagerOptions;
 import org.apache.flink.util.Preconditions;
 
+import lombok.Getter;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -55,9 +58,9 @@ public class JobAutoScalerImpl<KEY, Context extends JobAutoScalerContext<KEY>>
     private final ScalingMetricCollector<KEY, Context> metricsCollector;
     private final ScalingMetricEvaluator evaluator;
     private final ScalingExecutor<KEY, Context> scalingExecutor;
-    private final AutoScalerEventHandler<KEY, Context> eventHandler;
+    @Getter private final AutoScalerEventHandler<KEY, Context> eventHandler;
     private final ScalingRealizer<KEY, Context> scalingRealizer;
-    private final AutoScalerStateStore<KEY, Context> stateStore;
+    @Getter private final AutoScalerStateStore<KEY, Context> stateStore;
 
     private Clock clock = Clock.systemDefaultZone();
 
@@ -94,12 +97,22 @@ public class JobAutoScalerImpl<KEY, Context extends JobAutoScalerContext<KEY>>
                 return;
             }
 
+            ExceptionHistory exceptionHistory = stateStore.getExceptionHistory(ctx);
+            if (exceptionHistory.getCurrent() != null) {
+                LOG.info("exception: \n" + exceptionHistory.getCurrent());
+                if (exceptionHistory.getCurrent().getReason()
+                        == ExceptionHistory.Reason.OutOfMemory) {
+                    LOG.info("oom detected: \n" + exceptionHistory.getCurrent());
+                    handleOomException(ctx, exceptionHistory);
+                    return;
+                }
+            }
+
             if (ctx.getJobStatus() != JobStatus.RUNNING) {
                 LOG.debug("Autoscaler is waiting for stable, running state");
                 lastEvaluatedMetrics.remove(ctx.getJobKey());
                 return;
             }
-
             runScalingLogic(ctx, autoscalerMetrics);
             stateStore.flush(ctx);
         } catch (NotReadyException e) {
@@ -258,5 +271,90 @@ public class JobAutoScalerImpl<KEY, Context extends JobAutoScalerContext<KEY>>
         this.clock = Preconditions.checkNotNull(clock);
         this.metricsCollector.setClock(clock);
         this.scalingExecutor.setClock(clock);
+    }
+
+    private String multiplyMemorySizeString(String memStr, double factor) {
+        MemorySize memSize = MemorySize.parse(memStr);
+        MemorySize newMemSize = memSize.multiply(factor);
+        return MemorySize.ofMebiBytes(newMemSize.getMebiBytes()).toString();
+    }
+
+    private String addMemorySizeString(String memStr1, String memStr2) {
+        MemorySize memSize1 = MemorySize.parse(memStr1);
+        MemorySize memSize2 = MemorySize.parse(memStr2);
+        MemorySize newMemSize = memSize1.add(memSize2);
+        return MemorySize.ofMebiBytes(newMemSize.getMebiBytes()).toString();
+    }
+
+    private MemorySize getOverrideMemSize(Map<String, String> configOverrides, String key) {
+        return MemorySize.parse(configOverrides.getOrDefault(key, "0 mb"));
+    }
+
+    private void handleOomException(Context ctx, ExceptionHistory exceptionHistory)
+            throws Exception {
+        if (exceptionHistory.getCurrent() == null) {
+            return;
+        }
+        double multiplyFactor = 1.5;
+        String totalMemKey = TaskManagerOptions.TOTAL_PROCESS_MEMORY.key();
+        String jvmMetaMemKey = TaskManagerOptions.JVM_METASPACE.key();
+        String networkMinMemKey = TaskManagerOptions.NETWORK_MEMORY_MIN.key();
+        String networkMaxMemKey = TaskManagerOptions.NETWORK_MEMORY_MAX.key();
+        ConfigChanges configChanges = stateStore.getConfigChanges(ctx);
+        Map<String, String> configOverrides = configChanges.getOverrides();
+        if (configOverrides.isEmpty()) {
+            configChanges.addOverride(
+                    totalMemKey,
+                    ctx.getConfiguration()
+                            .get(TaskManagerOptions.TOTAL_PROCESS_MEMORY)
+                            .multiply(multiplyFactor)
+                            .toString());
+        } else {
+            String message = exceptionHistory.getCurrent().getMessage();
+            MemorySize curTotalMemSize = getOverrideMemSize(configOverrides, totalMemKey);
+            if (message.contains("OOMKilled")
+                    || message.contains("OutOfMemoryError: Java heap space")
+                    || message.contains("OutOfMemoryError: Direct buffer memory")
+                    || message.contains("OutOfMemoryError: GC overhead limit exceeded")) {
+                configChanges.addOverride(
+                        totalMemKey, curTotalMemSize.multiply(multiplyFactor).toString());
+            } else if (message.contains("OutOfMemoryError: Metaspace")) {
+                MemorySize jvmMetaMemSize = getOverrideMemSize(configOverrides, jvmMetaMemKey);
+                if (jvmMetaMemSize.compareTo(MemorySize.ZERO) == 0) {
+                    configChanges.addOverride(
+                            totalMemKey, curTotalMemSize.multiply(multiplyFactor).toString());
+                } else {
+                    MemorySize newJVMMetaMemSize = jvmMetaMemSize.multiply(multiplyFactor);
+                    MemorySize newTotalMemSize =
+                            curTotalMemSize.add(newJVMMetaMemSize.subtract(jvmMetaMemSize));
+                    configChanges
+                            .addOverride(jvmMetaMemKey, newJVMMetaMemSize.toString())
+                            .addOverride(totalMemKey, newTotalMemSize.toString());
+                }
+            } else if (message.contains("IOException: Insufficient number of network buffers")) {
+                MemorySize networkMinMemSize =
+                        getOverrideMemSize(configOverrides, networkMinMemKey);
+                MemorySize networkMaxMemSize =
+                        getOverrideMemSize(configOverrides, networkMaxMemKey);
+                if (networkMaxMemSize.compareTo(MemorySize.ZERO) == 0
+                        && networkMinMemSize.compareTo(MemorySize.ZERO) == 0) {
+                    configChanges.addOverride(
+                            totalMemKey, curTotalMemSize.multiply(multiplyFactor).toString());
+                } else {
+                    MemorySize newNetworkMinMemSize = networkMinMemSize.multiply(multiplyFactor);
+                    MemorySize newNetworkMaxMemSize = networkMaxMemSize.multiply(multiplyFactor);
+                    MemorySize newTotalMemSize =
+                            curTotalMemSize.add(newNetworkMaxMemSize.subtract(networkMaxMemSize));
+                    configChanges
+                            .addOverride(networkMinMemKey, newNetworkMinMemSize.toString())
+                            .addOverride(networkMaxMemKey, newNetworkMaxMemSize.toString())
+                            .addOverride(totalMemKey, newTotalMemSize.toString());
+                }
+            }
+        }
+        stateStore.storeConfigChanges(ctx, configChanges);
+        // clear current exception after handled
+        stateStore.storeExceptionHistory(ctx, exceptionHistory.clearCurrentException());
+        stateStore.flush(ctx);
     }
 }
