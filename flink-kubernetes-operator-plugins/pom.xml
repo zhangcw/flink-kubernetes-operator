@@ -27,18 +27,27 @@ under the License.
         <relativePath>..</relativePath>
     </parent>
 
-    <artifactId>flink-autoscaler</artifactId>
-    <name>Flink Autoscaler</name>
+    <artifactId>flink-kubernetes-operator-plugins</artifactId>
+    <name>Flink Kubernetes Operator Plugins</name>
     <packaging>jar</packaging>
 
-    <properties>
-        <surefire.module.config>
-            <!-- required by JobTopologyTest -->
-            --add-opens=java.base/java.lang=ALL-UNNAMED
-        </surefire.module.config>
-    </properties>
-
     <dependencies>
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-kubernetes-operator-api</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.flink</groupId>
+            <artifactId>flink-kubernetes-operator</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>io.javaoperatorsdk</groupId>
+            <artifactId>operator-framework-core</artifactId>
+            <version>${operator.sdk.version}</version>
+        </dependency>
+
         <dependency>
             <groupId>org.apache.flink</groupId>
             <artifactId>flink-runtime</artifactId>
@@ -54,72 +63,16 @@ under the License.
         </dependency>
 
         <dependency>
-            <groupId>org.quartz-scheduler</groupId>
-            <artifactId>quartz</artifactId>
-            <version>${quartz.version}</version>
-            <exclusions>
-                <exclusion>
-                    <artifactId>HikariCP-java7</artifactId>
-                    <groupId>com.zaxxer</groupId>
-                </exclusion>
-            </exclusions>
-        </dependency>
-
-        <dependency>
-            <groupId>com.zaxxer</groupId>
-            <artifactId>HikariCP</artifactId>
-            <version>${hikari.version}</version>
-        </dependency>
-
-        <dependency>
-            <groupId>org.projectlombok</groupId>
-            <artifactId>lombok</artifactId>
-            <version>${lombok.version}</version>
-            <scope>provided</scope>
-        </dependency>
-
-        <dependency>
-            <groupId>org.apache.flink</groupId>
-            <artifactId>flink-test-utils-junit</artifactId>
-            <version>${flink.version}</version>
-            <scope>test</scope>
-        </dependency>
-
-        <dependency>
-            <groupId>org.junit.jupiter</groupId>
-            <artifactId>junit-jupiter-params</artifactId>
-            <scope>test</scope>
-        </dependency>
-
-        <dependency>
-            <groupId>org.assertj</groupId>
-            <artifactId>assertj-core</artifactId>
-            <version>${assertj.version}</version>
-            <scope>test</scope>
-        </dependency>
-
-        <dependency>
-            <groupId>org.apache.flink</groupId>
-            <artifactId>flink-runtime</artifactId>
-            <version>${flink.version}</version>
-            <type>test-jar</type>
-            <classifier>tests</classifier>
-            <scope>test</scope>
-        </dependency>
-
-        <dependency>
-            <groupId>org.awaitility</groupId>
-            <artifactId>awaitility</artifactId>
-            <version>${awaitility.version}</version>
-            <scope>test</scope>
+            <groupId>io.kubernetes</groupId>
+            <artifactId>client-java</artifactId>
+            <version>15.0.1</version>
         </dependency>
         <dependency>
             <groupId>org.apache.flink</groupId>
-            <artifactId>flink-kubernetes</artifactId>
+            <artifactId>flink-metrics-core</artifactId>
             <version>${flink.version}</version>
-            <scope>provided</scope>
+            <scope>compile</scope>
         </dependency>
-
     </dependencies>
 
     <build>
@@ -135,7 +88,28 @@ under the License.
                     </execution>
                 </executions>
             </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-dependency-plugin</artifactId>
+                <executions>
+                    <execution>
+                        <id>copy</id>
+                        <phase>package</phase>
+                        <goals>
+                            <goal>copy</goal>
+                        </goals>
+                    </execution>
+                </executions>
+                <configuration>
+                    <artifactItems>
+                        <artifactItem>
+                            <groupId>io.javaoperatorsdk</groupId>
+                            <artifactId>operator-framework-core</artifactId>
+                            <version>${operator.sdk.version}</version>
+                        </artifactItem>
+                    </artifactItems>
+                </configuration>
+            </plugin>
         </plugins>
     </build>
-
 </project>

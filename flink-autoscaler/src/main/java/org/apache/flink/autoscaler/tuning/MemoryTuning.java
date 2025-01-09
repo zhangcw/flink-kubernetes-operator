@@ -103,7 +103,9 @@ public class MemoryTuning {
                 specNetworkSize.toHumanReadableString(),
                 specMetaspaceSize.toHumanReadableString());
 
-        MemorySize maxMemoryBySpec = context.getTaskManagerMemory().orElse(MemorySize.ZERO);
+        // MemorySize maxMemoryBySpec = context.getTaskManagerMemory().orElse(MemorySize.ZERO);
+        MemorySize maxMemoryBySpec =
+                context.getConfiguration().get(AutoScalerOptions.TM_MEMORY_BUDGET);
         if (maxMemoryBySpec.compareTo(MemorySize.ZERO) <= 0) {
             LOG.warn("Spec TaskManager memory size could not be determined.");
             return EMPTY_CONFIG;

@@ -24,6 +24,7 @@ import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.ConfigurationUtils;
 import org.apache.flink.configuration.MemorySize;
 import org.apache.flink.configuration.PipelineOptions;
+import org.apache.flink.kubernetes.configuration.KubernetesConfigOptions;
 import org.apache.flink.kubernetes.operator.api.FlinkDeployment;
 import org.apache.flink.kubernetes.operator.api.spec.Resource;
 import org.apache.flink.kubernetes.operator.config.FlinkConfigBuilder;
@@ -35,6 +36,7 @@ import org.slf4j.LoggerFactory;
 import javax.annotation.Nullable;
 
 import java.util.Map;
+import java.util.Objects;
 
 /** The Kubernetes implementation for applying parallelism overrides. */
 public class KubernetesScalingRealizer
@@ -84,6 +86,14 @@ public class KubernetesScalingRealizer
         if (!totalMemoryOverride.equals(currentMemory)) {
             // Adjust the resource memory to change the total TM memory
             tmResource.setMemory(String.valueOf(totalMemoryOverride.getBytes()));
+        }
+
+        // Update taskmanager cpu cores in spec
+        Double currentCpuCores = tmResource.getCpu();
+        Double cpuCores =
+                Configuration.fromMap(flinkConf).get(KubernetesConfigOptions.TASK_MANAGER_CPU);
+        if (!Objects.equals(currentCpuCores, cpuCores)) {
+            tmResource.setCpu(cpuCores);
         }
     }
 
