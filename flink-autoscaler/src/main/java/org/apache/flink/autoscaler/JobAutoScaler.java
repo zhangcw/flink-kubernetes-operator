@@ -18,6 +18,8 @@
 package org.apache.flink.autoscaler;
 
 import org.apache.flink.annotation.Internal;
+import org.apache.flink.autoscaler.event.AutoScalerEventHandler;
+import org.apache.flink.autoscaler.state.AutoScalerStateStore;
 
 /**
  * Flink Job AutoScaler.
@@ -27,6 +29,9 @@ import org.apache.flink.annotation.Internal;
  */
 @Internal
 public interface JobAutoScaler<KEY, Context extends JobAutoScalerContext<KEY>> {
+    AutoScalerStateStore<KEY, Context> getStateStore();
+
+    AutoScalerEventHandler<KEY, Context> getEventHandler();
 
     /**
      * Compute and apply new parallelism overrides for the provided job context.

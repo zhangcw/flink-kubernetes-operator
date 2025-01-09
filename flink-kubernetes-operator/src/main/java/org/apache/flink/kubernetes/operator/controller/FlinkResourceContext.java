@@ -20,6 +20,7 @@ package org.apache.flink.kubernetes.operator.controller;
 import org.apache.flink.api.common.JobID;
 import org.apache.flink.api.common.JobStatus;
 import org.apache.flink.autoscaler.config.AutoScalerOptions;
+import org.apache.flink.autoscaler.state.AutoScalerStateStore;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.kubernetes.operator.api.AbstractFlinkResource;
 import org.apache.flink.kubernetes.operator.api.spec.AbstractFlinkSpec;
@@ -34,8 +35,10 @@ import org.apache.flink.kubernetes.operator.service.FlinkService;
 
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.javaoperatorsdk.operator.api.reconciler.Context;
+import io.javaoperatorsdk.operator.processing.event.ResourceID;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
+import lombok.Setter;
 
 import javax.annotation.Nullable;
 
@@ -55,6 +58,9 @@ public abstract class FlinkResourceContext<CR extends AbstractFlinkResource<?, ?
     private Configuration observeConfig;
     private FlinkService flinkService;
     private KubernetesJobAutoScalerContext autoScalerContext;
+
+    @Getter @Setter
+    private AutoScalerStateStore<ResourceID, KubernetesJobAutoScalerContext> autoScalerStateStore;
 
     public KubernetesJobAutoScalerContext getJobAutoScalerContext() {
         if (autoScalerContext != null) {

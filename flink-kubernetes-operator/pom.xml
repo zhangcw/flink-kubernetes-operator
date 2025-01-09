@@ -347,6 +347,12 @@ under the License.
                             <version>1.10.1-SNAPSHOT</version>
                             <outputDirectory>${plugins.tmp.dir}/flink-autoscaler-plugin-jdbc</outputDirectory>
                         </artifactItem>
+<!--                        <artifactItem>-->
+<!--                            <groupId>org.apache.flink</groupId>-->
+<!--                            <artifactId>flink-kubernetes-operator-plugins</artifactId>-->
+<!--                            <version>1.10.1-SNAPSHOT</version>-->
+<!--                            <outputDirectory>${plugins.tmp.dir}/flink-kubernetes-operator-plugins</outputDirectory>-->
+<!--                        </artifactItem>-->
                     </artifactItems>
                 </configuration>
             </plugin>

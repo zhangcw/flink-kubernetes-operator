@@ -103,12 +103,15 @@ public class MemoryTuning {
                 specNetworkSize.toHumanReadableString(),
                 specMetaspaceSize.toHumanReadableString());
 
-        MemorySize maxMemoryBySpec = context.getTaskManagerMemory().orElse(MemorySize.ZERO);
+        // MemorySize maxMemoryBySpec = context.getTaskManagerMemory().orElse(MemorySize.ZERO);
+        MemorySize maxMemoryBySpec =
+                context.getConfiguration().get(AutoScalerOptions.TM_MEMORY_BUDGET);
         if (maxMemoryBySpec.compareTo(MemorySize.ZERO) <= 0) {
             LOG.warn("Spec TaskManager memory size could not be determined.");
             return EMPTY_CONFIG;
         }
 
+        /*
         MemoryBudget memBudget = new MemoryBudget(maxMemoryBySpec.getBytes());
         // Budget the original spec's memory settings which we do not modify
         memBudget.budget(memSpecs.getFlinkMemory().getFrameworkOffHeap().getBytes());
@@ -161,6 +164,146 @@ public class MemoryTuning {
             LOG.warn("Invalid total memory configuration: {}", totalMemory);
             return EMPTY_CONFIG;
         }
+        */
+
+        MemoryBudget memBudget = new MemoryBudget(maxMemoryBySpec.getBytes());
+        // Budget the original spec's memory settings which we do not modify
+        memBudget.budget(memSpecs.getFlinkMemory().getFrameworkOffHeap().getBytes());
+        memBudget.budget(memSpecs.getFlinkMemory().getTaskOffHeap().getBytes());
+        memBudget.budget(memSpecs.getJvmOverheadSize().getBytes());
+
+        var globalMetrics = evaluatedMetrics.getGlobalMetrics();
+        // The order matters in case the memory usage is higher than the maximum available memory.
+        // Managed memory comes last because it can grow arbitrary for RocksDB jobs.
+        MemorySize newNetworkSize =
+                adjustNetworkMemory(
+                        jobTopology,
+                        ResourceCheckUtils.computeNewParallelisms(
+                                scalingSummaries, evaluatedMetrics.getVertexMetrics()),
+                        config,
+                        memBudget);
+        // Assign memory to the METASPACE before the HEAP to ensure all needed memory is provided
+        // to the METASPACE
+        MemorySize newMetaspaceSize =
+                determineNewSize(getUsage(METASPACE_MEMORY_USED, globalMetrics), config, memBudget);
+        MemorySize newHeapSize =
+                determineNewSize(getUsage(HEAP_MEMORY_USED, globalMetrics), config, memBudget);
+        // 先按照该默认值分配托管内存
+        MemorySize defaultManagedMemSize = MemorySize.parse("400 mb");
+        MemorySize newManagedSize =
+                adjustManagedMemory(
+                        getUsage(MANAGED_MEMORY_USED, globalMetrics),
+                        defaultManagedMemSize,
+                        config,
+                        memBudget);
+        // Rescale heap according to scaling decision after distributing all memory pools
+        newHeapSize =
+                MemoryScaling.applyMemoryScaling(
+                        newHeapSize, memBudget, context, scalingSummaries, evaluatedMetrics);
+
+        MemorySize totalMemory =
+                new MemorySize(maxMemoryBySpec.getBytes() - memBudget.getRemaining());
+
+        // 预算有剩余的情况下，按照metric的值优化托管内存的分配
+        MemorySize flinkMemory =
+                totalMemory.subtract(memSpecs.getJvmOverheadSize()).subtract(newMetaspaceSize);
+        long flinkMemoryBytes = flinkMemory.getBytes();
+        MemorySize newJvmOverheadSize = memSpecs.getJvmOverheadSize();
+        if (memBudget.getRemaining() > 0) {
+            // 重新分配网络内存
+            MemorySize newNetworkSizeReCal =
+                    new MemorySize(
+                            Math.max(
+                                    newNetworkSize.getBytes(),
+                                    Math.min(
+                                            Math.max(
+                                                    (long)
+                                                            (flinkMemoryBytes
+                                                                    * config.get(
+                                                                            TaskManagerOptions
+                                                                                    .NETWORK_MEMORY_FRACTION)),
+                                                    config.get(
+                                                                    TaskManagerOptions
+                                                                            .NETWORK_MEMORY_MIN)
+                                                            .getBytes()),
+                                            config.get(TaskManagerOptions.NETWORK_MEMORY_MAX)
+                                                    .getBytes())));
+            long networkSizeDiff = newNetworkSizeReCal.getBytes() - newNetworkSize.getBytes();
+            if (networkSizeDiff > 0) {
+                var diffBudget = memBudget.budget(networkSizeDiff);
+                newNetworkSize = new MemorySize(newNetworkSize.getBytes() + diffBudget);
+                flinkMemoryBytes += diffBudget;
+            } else if (networkSizeDiff < 0) {
+                flinkMemoryBytes += networkSizeDiff;
+                newNetworkSize = new MemorySize(newNetworkSize.getBytes() + networkSizeDiff);
+                memBudget = new MemoryBudget(memBudget.getRemaining() - networkSizeDiff);
+            }
+
+            // 重新分配托管内存
+            MemorySize newManagedSizeReCal =
+                    new MemorySize(
+                            Math.max(
+                                    (long)
+                                            (flinkMemoryBytes
+                                                    * config.get(
+                                                            TaskManagerOptions
+                                                                    .MANAGED_MEMORY_FRACTION)),
+                                    config.get(
+                                                    TaskManagerOptions.MANAGED_MEMORY_SIZE,
+                                                    MemorySize.ZERO)
+                                            .getBytes()));
+
+            long managedMemoryDiff = newManagedSizeReCal.getBytes() - newManagedSize.getBytes();
+            if (managedMemoryDiff > 0) {
+                var diffBudget = memBudget.budget(managedMemoryDiff);
+                flinkMemoryBytes += diffBudget;
+                newManagedSize = new MemorySize(newManagedSize.getBytes() + diffBudget);
+            } else if (managedMemoryDiff < 0) {
+                flinkMemoryBytes += managedMemoryDiff;
+                newManagedSize = new MemorySize(newManagedSize.getBytes() + managedMemoryDiff);
+                memBudget = new MemoryBudget(memBudget.getRemaining() - managedMemoryDiff);
+            }
+
+            // 重新分配JVM Overhead
+            double jvmOverheadFraction = config.get(TaskManagerOptions.JVM_OVERHEAD_FRACTION);
+            MemorySize newJvmOverheadSizeReCal =
+                    new MemorySize(
+                            Math.min(
+                                    Math.max(
+                                            (long)
+                                                    ((flinkMemoryBytes
+                                                                    + newMetaspaceSize.getBytes())
+                                                            * jvmOverheadFraction
+                                                            / (1 - jvmOverheadFraction)),
+                                            config.get(TaskManagerOptions.JVM_OVERHEAD_MIN)
+                                                    .getBytes()),
+                                    config.get(TaskManagerOptions.JVM_OVERHEAD_MAX).getBytes()));
+            long jvmOverheadDiff =
+                    newJvmOverheadSizeReCal.getBytes() - newJvmOverheadSize.getBytes();
+            if (jvmOverheadDiff > 0) {
+                var diffBudget = memBudget.budget(jvmOverheadDiff);
+                newJvmOverheadSize = new MemorySize(newJvmOverheadSize.getBytes() + diffBudget);
+            } else if (jvmOverheadDiff < 0) {
+                memBudget = new MemoryBudget(memBudget.getRemaining() - jvmOverheadDiff);
+                newJvmOverheadSize =
+                        new MemorySize(newJvmOverheadSize.getBytes() + jvmOverheadDiff);
+            }
+
+            flinkMemory = new MemorySize(flinkMemoryBytes);
+            totalMemory = new MemorySize(maxMemoryBySpec.getBytes() - memBudget.getRemaining());
+        }
+
+        LOG.info(
+                "Optimized memory sizes: heap: {} managed: {}, network: {}, meta: {}",
+                newHeapSize.toHumanReadableString(),
+                newManagedSize.toHumanReadableString(),
+                newNetworkSize.toHumanReadableString(),
+                newMetaspaceSize.toHumanReadableString());
+
+        if (totalMemory.compareTo(MemorySize.ZERO) <= 0) {
+            LOG.warn("Invalid total memory configuration: {}", totalMemory);
+            return EMPTY_CONFIG;
+        }
 
         // Prepare the tuning config for new configuration values
         var tuningConfig = new ConfigChanges();
@@ -177,22 +320,30 @@ public class MemoryTuning {
         // Set default to zero because we already account for heap via task heap.
         tuningConfig.addOverride(TaskManagerOptions.FRAMEWORK_HEAP_MEMORY, MemorySize.ZERO);
 
+        /*
         MemorySize flinkMemorySize =
                 new MemorySize(
                         memSpecs.getTotalFlinkMemorySize().getBytes() + flinkMemoryDiffBytes);
+        */
 
         // All memory options which can be configured via fractions need to be re-calculated.
         tuningConfig.addOverride(
                 TaskManagerOptions.MANAGED_MEMORY_FRACTION,
-                getFraction(newManagedSize, flinkMemorySize));
+                getFraction(newManagedSize, flinkMemory));
         tuningConfig.addRemoval(TaskManagerOptions.MANAGED_MEMORY_SIZE);
 
         tuningConfig.addOverride(TaskManagerOptions.NETWORK_MEMORY_MIN, newNetworkSize);
         tuningConfig.addOverride(TaskManagerOptions.NETWORK_MEMORY_MAX, newNetworkSize);
 
+        /*
         tuningConfig.addOverride(
                 TaskManagerOptions.JVM_OVERHEAD_FRACTION,
                 getFraction(memSpecs.getJvmOverheadSize(), totalMemory));
+        */
+
+        tuningConfig.addOverride(
+                TaskManagerOptions.JVM_OVERHEAD_FRACTION,
+                getFraction(newJvmOverheadSize, totalMemory));
 
         tuningConfig.addOverride(TaskManagerOptions.JVM_METASPACE, newMetaspaceSize);
 
@@ -242,6 +393,26 @@ public class MemoryTuning {
             return new MemorySize(maxManagedMemorySize);
         } else {
             long managedMemorySize = memBudget.budget(managedMemoryConfigured.getBytes());
+            return new MemorySize(managedMemorySize);
+        }
+    }
+
+    private static MemorySize determineManagedMemory(
+            MemorySize managedMemoryUsage, Configuration config) {
+        // Managed memory usage can't accurately be measured yet.
+        // It is either zero (no usage) or an opaque amount of memory (RocksDB).
+        if (managedMemoryUsage.compareTo(MemorySize.ZERO) <= 0) {
+            return MemorySize.ZERO;
+        } else if (config.get(AutoScalerOptions.MEMORY_TUNING_MAXIMIZE_MANAGED_MEMORY)) {
+            return new MemorySize(Long.MAX_VALUE);
+        } else {
+            double overheadFactor = 1 + config.get(AutoScalerOptions.MEMORY_TUNING_OVERHEAD);
+            long managedMemorySize = (long) (managedMemoryUsage.getBytes() * overheadFactor);
+            managedMemorySize =
+                    Math.max(
+                            managedMemorySize,
+                            config.get(TaskManagerOptions.MANAGED_MEMORY_SIZE, MemorySize.ZERO)
+                                    .getBytes());
             return new MemorySize(managedMemorySize);
         }
     }

@@ -146,14 +146,9 @@ public class ApplicationReconciler
         ClusterHealthEvaluator.removeLastValidClusterHealthInfo(
                 relatedResource.getStatus().getClusterInfo());
 
-        if (savepoint.isPresent()) {
+        if (savepoint.isPresent() && !savepoint.get().equals(LAST_STATE_DUMMY_SP_PATH)) {
             // Savepoint deployment
             deployConfig.set(SavepointConfigOptions.SAVEPOINT_PATH, savepoint.get());
-        } else if (requireHaMetadata && flinkService.atLeastOneCheckpoint(deployConfig)) {
-            // Last state deployment, explicitly set a dummy savepoint path to avoid accidental
-            // incorrect state restore in case the HA metadata is deleted by the user
-            deployConfig.set(SavepointConfigOptions.SAVEPOINT_PATH, LAST_STATE_DUMMY_SP_PATH);
-            status.getJobStatus().setUpgradeSavepointPath(LAST_STATE_DUMMY_SP_PATH);
         } else {
             // Stateless deployment, remove any user configured savepoint path
             deployConfig.removeConfig(SavepointConfigOptions.SAVEPOINT_PATH);

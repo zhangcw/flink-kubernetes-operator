@@ -57,18 +57,10 @@ public class AutoscalerFactory {
             EventRecorder eventRecorder,
             ClusterResourceManager clusterResourceManager) {
 
-        String stateStoreType = config.get(KubernetesOperatorConfigOptions.STATE_STORE_TYPE);
-        String eventHandlerType = config.get(KubernetesOperatorConfigOptions.EVENT_HANDLER_TYPE);
-        LOG.info("state-store.type: " + stateStoreType);
-        LOG.info("event-handler.type: " + eventHandlerType);
-        var stateStore =
-                "JDBC".equals(stateStoreType)
-                        ? createJdbcStateStore(config)
-                        : new KubernetesAutoScalerStateStore(new ConfigMapStore(client));
-        var eventHandler =
-                "JDBC".equals(eventHandlerType)
-                        ? createJdbcEventHandler(config)
-                        : new KubernetesAutoScalerEventHandler(eventRecorder);
+        AutoScalerStateStore<ResourceID, KubernetesJobAutoScalerContext> stateStore =
+                createStateStore(config, client);
+        AutoScalerEventHandler<ResourceID, KubernetesJobAutoScalerContext> eventHandler =
+                createEventHandler(config, eventRecorder);
 
         return new JobAutoScalerImpl<>(
                 new RestApiMetricsCollector<>(),
@@ -79,15 +71,27 @@ public class AutoscalerFactory {
                 stateStore);
     }
 
-    private static AutoScalerEventHandler createJdbcEventHandler(Configuration config) {
-        return new JdbcAutoScalerEventHandler<>(
-                new JdbcEventInteractor(getJdbcConnection(config)),
-                config.get(KubernetesOperatorConfigOptions.JDBC_EVENT_HANDLER_TTL));
+    public static AutoScalerStateStore<ResourceID, KubernetesJobAutoScalerContext> createStateStore(
+            Configuration config, KubernetesClient client) {
+        String stateStoreType = config.get(KubernetesOperatorConfigOptions.STATE_STORE_TYPE);
+        LOG.info("state-store.type: " + stateStoreType);
+        if ("JDBC".equals(stateStoreType)) {
+            return new JdbcAutoScalerStateStore<>(
+                    new JdbcStateStore(new JdbcStateInteractor(getJdbcConnection(config))));
+        }
+        return new KubernetesAutoScalerStateStore(new ConfigMapStore(client));
     }
 
-    private static AutoScalerStateStore createJdbcStateStore(Configuration config) {
-        return new JdbcAutoScalerStateStore<>(
-                new JdbcStateStore(new JdbcStateInteractor(getJdbcConnection(config))));
+    public static AutoScalerEventHandler<ResourceID, KubernetesJobAutoScalerContext>
+            createEventHandler(Configuration config, EventRecorder eventRecorder) {
+        String eventHandlerType = config.get(KubernetesOperatorConfigOptions.EVENT_HANDLER_TYPE);
+        LOG.info("event-handler.type: " + eventHandlerType);
+        if ("JDBC".equals(eventHandlerType)) {
+            return new JdbcAutoScalerEventHandler<>(
+                    new JdbcEventInteractor(getJdbcConnection(config)),
+                    config.get(KubernetesOperatorConfigOptions.JDBC_EVENT_HANDLER_TTL));
+        }
+        return new KubernetesAutoScalerEventHandler(eventRecorder);
     }
 
     private static Connection getJdbcConnection(Configuration config) {
@@ -99,6 +103,11 @@ public class AutoscalerFactory {
         hikariConfig.setJdbcUrl(jdbcUrl);
         hikariConfig.setUsername(user);
         hikariConfig.setPassword(password);
+        hikariConfig.setMaxLifetime(600000);
+        hikariConfig.setConnectionTestQuery("SELECT 1");
+        hikariConfig.setValidationTimeout(3000);
+        hikariConfig.setKeepaliveTime(60000);
+
         try {
             return new HikariDataSource(hikariConfig).getConnection();
         } catch (SQLException e) {

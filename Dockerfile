@@ -25,7 +25,7 @@ WORKDIR /app
 
 COPY . .
 
-RUN --mount=type=cache,target=/root/.m2 mvn -ntp clean install -pl flink-autoscaler-plugin-jdbc,flink-kubernetes-standalone,flink-kubernetes-operator-api,flink-kubernetes-operator,flink-autoscaler,flink-kubernetes-webhook -DskipTests=$SKIP_TESTS -Dfabric8.httpclient.impl="$HTTP_CLIENT"
+RUN --mount=type=cache,target=/root/.m2 mvn -ntp clean install -U -pl flink-autoscaler-plugin-jdbc,flink-kubernetes-standalone,flink-kubernetes-operator-api,flink-kubernetes-operator,flink-autoscaler,flink-kubernetes-webhook -Drat.skip=true -DskipTests=$SKIP_TESTS -Dfabric8.httpclient.impl="$HTTP_CLIENT"
 
 RUN cd /app/tools/license; mkdir jars; cd jars; \
     cp /app/flink-kubernetes-operator/target/flink-kubernetes-operator-*-shaded.jar . && \
@@ -39,6 +39,7 @@ RUN cd /app/tools/license; mkdir jars; cd jars; \
 FROM eclipse-temurin:${JAVA_VERSION}-jre-jammy
 ENV FLINK_HOME=/opt/flink
 ENV FLINK_PLUGINS_DIR=$FLINK_HOME/plugins
+ENV FLINK_LOG_DIR=$FLINK_HOME/logs
 ENV OPERATOR_VERSION=1.10.1-SNAPSHOT
 ENV OPERATOR_JAR=flink-kubernetes-operator-$OPERATOR_VERSION-shaded.jar
 ENV WEBHOOK_JAR=flink-kubernetes-webhook-$OPERATOR_VERSION-shaded.jar
@@ -46,7 +47,7 @@ ENV AUTOSCALER_PLUGIN_JDBC_JAR=flink-autoscaler-plugin-jdbc-$OPERATOR_VERSION.ja
 ENV KUBERNETES_STANDALONE_JAR=flink-kubernetes-standalone-$OPERATOR_VERSION.jar
 
 ENV OPERATOR_LIB=$FLINK_HOME/operator-lib
-RUN mkdir -p $OPERATOR_LIB
+RUN mkdir -p $OPERATOR_LIB && mkdir -p $FLINK_LOG_DIR
 
 WORKDIR /flink-kubernetes-operator
 RUN groupadd --system --gid=9999 flink && \
@@ -60,6 +61,9 @@ COPY --chown=flink:flink --from=build /app/flink-kubernetes-standalone/target/$K
 COPY --chown=flink:flink --from=build /app/flink-autoscaler-plugin-jdbc/target/$AUTOSCALER_PLUGIN_JDBC_JAR .
 COPY --chown=flink:flink --from=build /app/flink-autoscaler-plugin-jdbc/target/dependency/* $OPERATOR_LIB
 COPY --chown=flink:flink --from=build /app/flink-kubernetes-operator/target/plugins $FLINK_HOME/plugins
+#RUN mkdir -p $FLINK_HOME/plugins/flink-kubernetes-operator-plugins
+#COPY --chown=flink:flink --from=build /app/flink-kubernetes-operator-plugins/target/flink-kubernetes-operator-plugins-*.jar $FLINK_HOME/plugins/flink-kubernetes-operator-plugins
+#COPY --chown=flink:flink --from=build /app/flink-kubernetes-operator-plugins/target/dependency/* $OPERATOR_LIB
 COPY --chown=flink:flink --from=build /app/tools/license/licenses-output/NOTICE .
 COPY --chown=flink:flink --from=build /app/tools/license/licenses-output/licenses ./licenses
 COPY --chown=flink:flink --from=build /app/LICENSE ./LICENSE
@@ -75,7 +79,7 @@ ARG DISABLE_JEMALLOC=false
 # Install jemalloc
 RUN if [ "$DISABLE_JEMALLOC" = "false" ]; then \
   apt-get update; \
-  apt-get -y install libjemalloc-dev; \
+  apt-get -y install libjemalloc-dev lrzsz; \
   rm -rf /var/lib/apt/lists/*; \
   fi
 

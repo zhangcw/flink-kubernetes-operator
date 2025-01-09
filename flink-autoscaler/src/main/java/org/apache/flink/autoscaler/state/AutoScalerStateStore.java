@@ -18,10 +18,7 @@
 package org.apache.flink.autoscaler.state;
 
 import org.apache.flink.annotation.Experimental;
-import org.apache.flink.autoscaler.DelayedScaleDown;
-import org.apache.flink.autoscaler.JobAutoScalerContext;
-import org.apache.flink.autoscaler.ScalingSummary;
-import org.apache.flink.autoscaler.ScalingTracking;
+import org.apache.flink.autoscaler.*;
 import org.apache.flink.autoscaler.metrics.CollectedMetrics;
 import org.apache.flink.autoscaler.tuning.ConfigChanges;
 import org.apache.flink.runtime.jobgraph.JobVertexID;
@@ -96,4 +93,9 @@ public interface AutoScalerStateStore<KEY, Context extends JobAutoScalerContext<
 
     /** Clean up all information related to the current job. */
     void removeInfoFromCache(KEY jobKey);
+
+    void storeExceptionHistory(Context jobContext, ExceptionHistory exceptionHistory)
+            throws Exception;
+
+    ExceptionHistory getExceptionHistory(Context jobContext) throws Exception;
 }

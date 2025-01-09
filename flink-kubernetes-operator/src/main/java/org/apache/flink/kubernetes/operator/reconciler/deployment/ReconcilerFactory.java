@@ -29,6 +29,7 @@ import org.apache.flink.kubernetes.operator.utils.EventRecorder;
 import org.apache.flink.kubernetes.operator.utils.StatusRecorder;
 
 import io.javaoperatorsdk.operator.processing.event.ResourceID;
+import lombok.Getter;
 
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -38,7 +39,7 @@ public class ReconcilerFactory {
 
     private final EventRecorder eventRecorder;
     private final StatusRecorder<FlinkDeployment, FlinkDeploymentStatus> deploymentStatusRecorder;
-    private final JobAutoScaler<ResourceID, KubernetesJobAutoScalerContext> autoscaler;
+    @Getter private final JobAutoScaler<ResourceID, KubernetesJobAutoScalerContext> autoscaler;
     private final Map<Tuple2<Mode, KubernetesDeploymentMode>, Reconciler<FlinkDeployment>>
             reconcilerMap;
 
