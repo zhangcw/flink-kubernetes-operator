@@ -66,6 +66,14 @@ public class AutoScalerOptions {
                     .withFallbackKeys(oldOperatorConfigKey("metrics.window"))
                     .withDescription("Scaling metrics aggregation window size.");
 
+    public static final ConfigOption<Duration> SCALE_UP_MIN_METRICS_WINDOW =
+            autoScalerConfig("metrics.scale-up-min-window")
+                    .durationType()
+                    .defaultValue(Duration.ofMinutes(15))
+                    .withFallbackKeys(oldOperatorConfigKey("metrics.scale-up-min-window"))
+                    .withDescription(
+                            "Scaling metrics aggregation minimum window size for scaling up.");
+
     public static final ConfigOption<Duration> STABILIZATION_INTERVAL =
             autoScalerConfig("stabilization.interval")
                     .durationType()

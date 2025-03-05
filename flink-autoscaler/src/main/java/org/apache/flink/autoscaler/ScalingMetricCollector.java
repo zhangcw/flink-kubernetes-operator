@@ -127,6 +127,11 @@ public abstract class ScalingMetricCollector<KEY, Context extends JobAutoScalerC
         var windowFullTime =
                 getWindowFullTime(metricHistory.tailMap(stableTime), now, metricWindowSize);
 
+        var scaleUpMetricMinWindowSize = getScaleUpMetricMinWindowSize(conf);
+        var scaleUpWindowFullTime =
+                getWindowFullTime(
+                        metricHistory.tailMap(stableTime), now, scaleUpMetricMinWindowSize);
+
         // The filtered list of metrics we want to query for each vertex
         var filteredVertexMetricNames = queryFilteredMetricNames(ctx, topology, isStabilizing);
 
@@ -150,6 +155,11 @@ public abstract class ScalingMetricCollector<KEY, Context extends JobAutoScalerC
         metricHistory.put(now, scalingMetrics);
 
         var collectedMetrics = new CollectedMetricHistory(topology, metricHistory, jobRunningTs);
+        if (now.isBefore(scaleUpWindowFullTime)) {
+            LOG.info("Scale up metric window not full until {}", readable(scaleUpWindowFullTime));
+        } else {
+            collectedMetrics.setMinWindowFullyCollected(true);
+        }
         if (now.isBefore(windowFullTime)) {
             if (isStabilizing) {
                 LOG.info("Stabilizing until {}", readable(stableTime));
@@ -189,6 +199,10 @@ public abstract class ScalingMetricCollector<KEY, Context extends JobAutoScalerC
 
     protected Duration getMetricWindowSize(Configuration conf) {
         return conf.get(AutoScalerOptions.METRICS_WINDOW);
+    }
+
+    protected Duration getScaleUpMetricMinWindowSize(Configuration conf) {
+        return conf.get(AutoScalerOptions.SCALE_UP_MIN_METRICS_WINDOW);
     }
 
     private static Instant getWindowFullTime(

@@ -156,6 +156,26 @@ public class JobVertexScaler<KEY, Context extends JobAutoScalerContext<KEY>> {
             SortedMap<Instant, ScalingSummary> history,
             Duration restartTime,
             DelayedScaleDown delayedScaleDown) {
+        return computeScaleTargetParallelism(
+                context,
+                vertex,
+                inputShipStrategies,
+                evaluatedMetrics,
+                history,
+                restartTime,
+                delayedScaleDown,
+                true);
+    }
+
+    public ParallelismChange computeScaleTargetParallelism(
+            Context context,
+            JobVertexID vertex,
+            Collection<ShipStrategy> inputShipStrategies,
+            Map<ScalingMetric, EvaluatedScalingMetric> evaluatedMetrics,
+            SortedMap<Instant, ScalingSummary> history,
+            Duration restartTime,
+            DelayedScaleDown delayedScaleDown,
+            boolean isMetricFullyCollected) {
         var conf = context.getConfiguration();
         var currentParallelism = (int) evaluatedMetrics.get(PARALLELISM).getCurrent();
         double averageTrueProcessingRate = evaluatedMetrics.get(TRUE_PROCESSING_RATE).getAverage();
@@ -233,7 +253,8 @@ public class JobVertexScaler<KEY, Context extends JobAutoScalerContext<KEY>> {
                 history,
                 currentParallelism,
                 newParallelism,
-                delayedScaleDown);
+                delayedScaleDown,
+                isMetricFullyCollected);
     }
 
     private ParallelismChange detectBlockScaling(
@@ -244,7 +265,8 @@ public class JobVertexScaler<KEY, Context extends JobAutoScalerContext<KEY>> {
             SortedMap<Instant, ScalingSummary> history,
             int currentParallelism,
             int newParallelism,
-            DelayedScaleDown delayedScaleDown) {
+            DelayedScaleDown delayedScaleDown,
+            boolean isMetricFullyCollected) {
         checkArgument(
                 currentParallelism != newParallelism,
                 "The newParallelism is equal to currentParallelism, no scaling is needed. This is probably a bug.");
@@ -274,8 +296,15 @@ public class JobVertexScaler<KEY, Context extends JobAutoScalerContext<KEY>> {
 
             return ParallelismChange.build(newParallelism, outsideUtilizationBound);
         } else {
-            return applyScaleDownInterval(
-                    delayedScaleDown, vertex, conf, newParallelism, outsideUtilizationBound);
+            // If metrics are fully collected, apply scale down interval to prevent frequent
+            // rescaling.
+            if (isMetricFullyCollected) {
+                return applyScaleDownInterval(
+                        delayedScaleDown, vertex, conf, newParallelism, outsideUtilizationBound);
+            }
+            // If metrics are not fully collected, do not scale down.
+            LOG.info("Job metrics are not fully collected, scale-down is not supported.");
+            return ParallelismChange.noChange();
         }
     }
 

@@ -32,4 +32,5 @@ public class CollectedMetricHistory {
     final SortedMap<Instant, CollectedMetrics> metricHistory;
     final Instant jobRunningTs;
     @Setter private boolean fullyCollected;
+    @Setter private boolean minWindowFullyCollected;
 }
