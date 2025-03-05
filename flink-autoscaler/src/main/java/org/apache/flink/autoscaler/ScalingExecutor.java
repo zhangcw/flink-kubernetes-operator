@@ -109,6 +109,27 @@ public class ScalingExecutor<KEY, Context extends JobAutoScalerContext<KEY>> {
             JobTopology jobTopology,
             DelayedScaleDown delayedScaleDown)
             throws Exception {
+        return scaleResource(
+                context,
+                evaluatedMetrics,
+                scalingHistory,
+                scalingTracking,
+                now,
+                jobTopology,
+                delayedScaleDown,
+                true);
+    }
+
+    public boolean scaleResource(
+            Context context,
+            EvaluatedMetrics evaluatedMetrics,
+            Map<JobVertexID, SortedMap<Instant, ScalingSummary>> scalingHistory,
+            ScalingTracking scalingTracking,
+            Instant now,
+            JobTopology jobTopology,
+            DelayedScaleDown delayedScaleDown,
+            boolean isMetricFullyCollected)
+            throws Exception {
         var conf = context.getConfiguration();
         var restartTime = scalingTracking.getMaxRestartTimeOrDefault(conf);
         var neverScaled = autoScalerStateStore.getConfigChanges(context).getOverrides().size() <= 1;
@@ -119,7 +140,8 @@ public class ScalingExecutor<KEY, Context extends JobAutoScalerContext<KEY>> {
                         scalingHistory,
                         restartTime,
                         jobTopology,
-                        delayedScaleDown);
+                        delayedScaleDown,
+                        isMetricFullyCollected);
 
         if (scalingSummaries.isEmpty()) {
             if (!neverScaled) {
@@ -235,7 +257,8 @@ public class ScalingExecutor<KEY, Context extends JobAutoScalerContext<KEY>> {
             Map<JobVertexID, SortedMap<Instant, ScalingSummary>> scalingHistory,
             Duration restartTime,
             JobTopology jobTopology,
-            DelayedScaleDown delayedScaleDown) {
+            DelayedScaleDown delayedScaleDown,
+            boolean isMetricFullyCollected) {
         LOG.debug("Restart time used in scaling summary computation: {}", restartTime);
 
         if (isJobUnderMemoryPressure(context, evaluatedMetrics.getGlobalMetrics())) {
@@ -269,7 +292,8 @@ public class ScalingExecutor<KEY, Context extends JobAutoScalerContext<KEY>> {
                                                 scalingHistory.getOrDefault(
                                                         v, Collections.emptySortedMap()),
                                                 restartTime,
-                                                delayedScaleDown);
+                                                delayedScaleDown,
+                                                isMetricFullyCollected);
                                 if (NO_CHANGE == parallelismChange.getChangeType()) {
                                     return;
                                 } else if (REQUIRED_CHANGE == parallelismChange.getChangeType()) {
