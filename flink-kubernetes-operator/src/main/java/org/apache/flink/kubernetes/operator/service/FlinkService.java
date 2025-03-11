@@ -34,6 +34,7 @@ import org.apache.flink.kubernetes.operator.observer.SavepointFetchResult;
 import org.apache.flink.runtime.client.JobStatusMessage;
 import org.apache.flink.runtime.jobmaster.JobResult;
 import org.apache.flink.runtime.rest.messages.JobExceptionsInfoWithHistory;
+import org.apache.flink.runtime.rest.messages.JobPlanInfo;
 
 import io.fabric8.kubernetes.api.model.ObjectMeta;
 import io.fabric8.kubernetes.api.model.PodList;
@@ -125,6 +126,8 @@ public interface FlinkService {
 
     Map<String, String> getMetrics(Configuration conf, String jobId, List<String> metricNames)
             throws Exception;
+
+    JobPlanInfo getJobPlanInfo(Configuration conf, String jobId) throws Exception;
 
     JobExceptionsInfoWithHistory getJobExceptionHistory(Configuration conf, String jobId)
             throws Exception;

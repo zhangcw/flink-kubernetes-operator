@@ -64,4 +64,15 @@ public class ConfigChanges {
         config.addAll(Configuration.fromMap(overrides));
         return config;
     }
+
+    public ConfigChanges update(ConfigChanges changes) {
+        removals.addAll(changes.removals);
+        overrides.putAll(changes.overrides);
+        return this;
+    }
+
+    @Override
+    public String toString() {
+        return "ConfigChanges{" + "overrides=" + overrides + ", removals=" + removals + '}';
+    }
 }
