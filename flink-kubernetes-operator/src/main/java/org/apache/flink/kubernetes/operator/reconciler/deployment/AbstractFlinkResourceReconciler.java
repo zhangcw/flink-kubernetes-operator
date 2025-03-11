@@ -21,6 +21,8 @@ import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.api.common.JobStatus;
 import org.apache.flink.autoscaler.ExceptionHistory;
 import org.apache.flink.autoscaler.JobAutoScaler;
+import org.apache.flink.autoscaler.config.AutoScalerOptions;
+import org.apache.flink.autoscaler.topology.ShipStrategy;
 import org.apache.flink.autoscaler.tuning.ConfigChanges;
 import org.apache.flink.configuration.Configuration;
 import org.apache.flink.configuration.TaskManagerOptions;
@@ -45,21 +47,32 @@ import org.apache.flink.kubernetes.operator.reconciler.diff.ReflectiveDiffBuilde
 import org.apache.flink.kubernetes.operator.utils.EventRecorder;
 import org.apache.flink.kubernetes.operator.utils.FlinkUtils;
 import org.apache.flink.kubernetes.operator.utils.StatusRecorder;
+import org.apache.flink.runtime.jobgraph.JobVertexID;
 import org.apache.flink.runtime.jobmanager.HighAvailabilityMode;
 import org.apache.flink.runtime.rest.messages.JobExceptionsInfoWithHistory;
+import org.apache.flink.runtime.rest.messages.JobPlanInfo;
+
+import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.JsonNode;
+import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.ObjectMapper;
+import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.node.ArrayNode;
+import org.apache.flink.shaded.jackson2.com.fasterxml.jackson.databind.node.ObjectNode;
 
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.javaoperatorsdk.operator.api.reconciler.DeleteControl;
 import io.javaoperatorsdk.operator.processing.event.ResourceID;
+import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.apache.flink.autoscaler.config.AutoScalerOptions.*;
 
@@ -135,6 +148,7 @@ public abstract class AbstractFlinkResourceReconciler<
         SPEC currentDeploySpec = cr.getSpec();
 
         handleExceptionIfExist(ctx);
+        prepareForAutoScaler(ctx);
         applyAutoscaler(ctx);
 
         var reconciliationState = reconciliationStatus.getState();
@@ -632,5 +646,101 @@ public abstract class AbstractFlinkResourceReconciler<
         } catch (Exception e) {
             LOG.warn("Failed to request the job result", e);
         }
+    }
+
+    private boolean startRecently(FlinkResourceContext<CR> ctx) {
+        Instant creationInstant =
+                Instant.parse(ctx.getResource().getMetadata().getCreationTimestamp());
+        long recentSeconds = 15 * 60;
+        var startRecently =
+                ctx.getResource().getStatus().getJobStatus().getState() == JobStatus.RUNNING
+                        && Instant.now().minusSeconds(recentSeconds).isBefore(creationInstant);
+        if (startRecently) {
+            LOG.info(
+                    "job was recently started at {}, less than {} seconds ago.",
+                    creationInstant,
+                    recentSeconds);
+        }
+        return startRecently;
+    }
+
+    private void prepareForAutoScaler(FlinkResourceContext<CR> ctx) {
+        // 检查job plan，确认是否所有的vertices都支持自动扩缩。
+        // 如果不支持，则把不支持的vertex添加到VERTEX_EXCLUDE_IDS中
+        // 只需要任务新启动时检查一次即可，不用后续每次reconcile都检查
+        boolean autoscalerEnabled =
+                ctx.getResource().getSpec().getJob() != null
+                        && ctx.getObserveConfig() != null
+                        && ctx.getObserveConfig().get(AUTOSCALER_ENABLED);
+        if (autoscalerEnabled && startRecently(ctx)) {
+            try {
+                Set<String> globalVertexIds = getGlobalOperatorVertexIds(ctx);
+                if (!globalVertexIds.isEmpty()) {
+                    LOG.info(
+                            "globalVertexIds should be excluded while scaling: {}",
+                            globalVertexIds);
+                    addToAutoScalerExcludeVertexIds(ctx, globalVertexIds);
+                }
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        }
+    }
+
+    private Set<String> getGlobalOperatorVertexIds(FlinkResourceContext<CR> ctx) throws Exception {
+        Set<String> globalOperatorVertexIds = new HashSet<>();
+        JobPlanInfo jobPlan =
+                ctx.getFlinkService()
+                        .getJobPlanInfo(
+                                ctx.getObserveConfig(),
+                                ctx.getResource().getStatus().getJobStatus().getJobId());
+        String jsonPlan = jobPlan.getJsonPlan();
+        ObjectMapper objectMapper = new ObjectMapper();
+        ObjectNode plan = objectMapper.readValue(jsonPlan, ObjectNode.class);
+        ArrayNode nodes = (ArrayNode) plan.get("nodes");
+        for (JsonNode node : nodes) {
+            var vertexId = JobVertexID.fromHexString(node.get("id").asText());
+            if (node.has("inputs")) {
+                for (JsonNode input : node.get("inputs")) {
+                    if (ShipStrategy.of(input.get("ship_strategy").asText())
+                            == ShipStrategy.GLOBAL) {
+                        globalOperatorVertexIds.add(vertexId.toString());
+                        break;
+                    }
+                }
+            }
+        }
+        return globalOperatorVertexIds;
+    }
+
+    private void addToAutoScalerExcludeVertexIds(
+            FlinkResourceContext<CR> ctx, Set<String> excludeVertexIds) throws Exception {
+        if (excludeVertexIds.isEmpty()) {
+            return;
+        }
+        var autoScalerCtx = ctx.getJobAutoScalerContext();
+        var autoscalerConf = autoScalerCtx.getConfiguration();
+        Set<String> excludeIds = new HashSet<>(autoscalerConf.get(VERTEX_EXCLUDE_IDS));
+        if (excludeIds.containsAll(excludeVertexIds)) {
+            return;
+        }
+        excludeIds.addAll(excludeVertexIds);
+        autoscalerConf.set(AutoScalerOptions.VERTEX_EXCLUDE_IDS, new ArrayList<>(excludeIds));
+        var stateStore = autoscaler.getStateStore();
+        var configChanges = stateStore.getConfigChanges(autoScalerCtx);
+        var excludeIdOverrideStr = configChanges.getOverrides().get(VERTEX_EXCLUDE_IDS.key());
+        Set<String> excludeIdOverride = new HashSet<>();
+        if (StringUtils.isNotEmpty(excludeIdOverrideStr)) {
+            excludeIdOverride = new HashSet<>(List.of(excludeIdOverrideStr.split(",")));
+            if (excludeIdOverride.containsAll(excludeIds)) {
+                return;
+            }
+        }
+
+        excludeIdOverride.addAll(excludeIds);
+        configChanges.addOverride(
+                AutoScalerOptions.VERTEX_EXCLUDE_IDS.key(), String.join(",", excludeIdOverride));
+        stateStore.storeConfigChanges(autoScalerCtx, configChanges);
+        stateStore.flush(autoScalerCtx);
     }
 }

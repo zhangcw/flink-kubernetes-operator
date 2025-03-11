@@ -1028,6 +1028,20 @@ public abstract class AbstractFlinkService implements FlinkService {
     }
 
     @Override
+    public JobPlanInfo getJobPlanInfo(Configuration conf, String jobId) throws Exception {
+        try (var clusterClient = getClusterClient(conf)) {
+            var jobPlanParameters = JobPlanHeaders.getInstance().getUnresolvedMessageParameters();
+            jobPlanParameters.jobPathParameter.resolve(JobID.fromHexString(jobId));
+            return clusterClient
+                    .sendRequest(
+                            JobPlanHeaders.getInstance(),
+                            jobPlanParameters,
+                            EmptyRequestBody.getInstance())
+                    .get(operatorConfig.getFlinkClientTimeout().toSeconds(), TimeUnit.SECONDS);
+        }
+    }
+
+    @Override
     public JobExceptionsInfoWithHistory getJobExceptionHistory(Configuration conf, String jobId)
             throws Exception {
         try (var clusterClient = getClusterClient(conf)) {

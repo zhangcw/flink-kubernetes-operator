@@ -38,6 +38,7 @@ import org.apache.flink.kubernetes.configuration.KubernetesConfigOptions;
 import org.apache.flink.runtime.instance.SlotSharingGroupId;
 import org.apache.flink.runtime.jobgraph.JobVertexID;
 
+import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -46,9 +47,12 @@ import javax.annotation.Nullable;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.SortedMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
@@ -127,7 +131,13 @@ public class ScalingExecutor<KEY, Context extends JobAutoScalerContext<KEY>> {
             throws Exception {
         var conf = context.getConfiguration();
         var restartTime = scalingTracking.getMaxRestartTimeOrDefault(conf);
-        var neverScaled = autoScalerStateStore.getConfigChanges(context).getOverrides().size() <= 1;
+
+        // 如果config overrides中没有内存配置，则说明从未进行过扩缩容（扩缩容是默认打开内存扩缩）
+        var neverScaled =
+                autoScalerStateStore
+                        .getConfigChanges(context)
+                        .getOverrides()
+                        .containsKey(TaskManagerOptions.TOTAL_PROCESS_MEMORY.key());
         var scalingSummaries =
                 computeScalingSummary(
                         context,
@@ -186,7 +196,8 @@ public class ScalingExecutor<KEY, Context extends JobAutoScalerContext<KEY>> {
 
         autoScalerStateStore.storeParallelismOverrides(context, parallelismOverrides);
 
-        autoScalerStateStore.storeConfigChanges(context, configOverrides);
+        var configChanges = autoScalerStateStore.getConfigChanges(context).update(configOverrides);
+        autoScalerStateStore.storeConfigChanges(context, configChanges);
 
         // Try to clear all delayed scale down requests after scaling.
         delayedScaleDown.clearAll();
@@ -243,8 +254,12 @@ public class ScalingExecutor<KEY, Context extends JobAutoScalerContext<KEY>> {
 
         var out = new HashMap<JobVertexID, ScalingSummary>();
 
-        var excludeVertexIdList =
-                context.getConfiguration().get(AutoScalerOptions.VERTEX_EXCLUDE_IDS);
+        Set<String> excludeVertexIdList =
+                new HashSet<>(context.getConfiguration().get(AutoScalerOptions.VERTEX_EXCLUDE_IDS));
+        excludeVertexIdList.addAll(getConfigChangeAutoScalerExcludeVertexIds(context));
+        if (!excludeVertexIdList.isEmpty()) {
+            LOG.info("Scaling should exclude these vertices: {}", excludeVertexIdList);
+        }
         AtomicBoolean anyVertexOutsideBound = new AtomicBoolean(false);
         evaluatedMetrics
                 .getVertexMetrics()
@@ -539,5 +554,21 @@ public class ScalingExecutor<KEY, Context extends JobAutoScalerContext<KEY>> {
         var taskSlots = conf.get(TaskManagerOptions.NUM_TASK_SLOTS);
         var tmNumber = Math.ceil((double) maxParallelism / taskSlots);
         return (int) Math.ceil((double) maxParallelism / tmNumber);
+    }
+
+    private Set<String> getConfigChangeAutoScalerExcludeVertexIds(Context context) {
+        try {
+            String overrideExcludeIdStr =
+                    autoScalerStateStore
+                            .getConfigChanges(context)
+                            .getOverrides()
+                            .get(AutoScalerOptions.VERTEX_EXCLUDE_IDS.key());
+            if (StringUtils.isNotEmpty(overrideExcludeIdStr)) {
+                return new HashSet<>(Arrays.asList(overrideExcludeIdStr.split(",")));
+            }
+            return Collections.emptySet();
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
     }
 }
