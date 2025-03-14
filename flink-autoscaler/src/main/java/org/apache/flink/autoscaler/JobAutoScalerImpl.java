@@ -275,19 +275,6 @@ public class JobAutoScalerImpl<KEY, Context extends JobAutoScalerContext<KEY>>
         this.scalingExecutor.setClock(clock);
     }
 
-    private String multiplyMemorySizeString(String memStr, double factor) {
-        MemorySize memSize = MemorySize.parse(memStr);
-        MemorySize newMemSize = memSize.multiply(factor);
-        return MemorySize.ofMebiBytes(newMemSize.getMebiBytes()).toString();
-    }
-
-    private String addMemorySizeString(String memStr1, String memStr2) {
-        MemorySize memSize1 = MemorySize.parse(memStr1);
-        MemorySize memSize2 = MemorySize.parse(memStr2);
-        MemorySize newMemSize = memSize1.add(memSize2);
-        return MemorySize.ofMebiBytes(newMemSize.getMebiBytes()).toString();
-    }
-
     private MemorySize getOverrideMemSize(Map<String, String> configOverrides, String key) {
         return MemorySize.parse(configOverrides.getOrDefault(key, "0 mb"));
     }

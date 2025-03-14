@@ -393,7 +393,7 @@ public class AutoScalerOptions {
     public static final ConfigOption<MemorySize> TM_MEMORY_BUDGET =
             autoScalerConfig("budget.taskmanager.memory")
                     .memoryType()
-                    .defaultValue(MemorySize.parse("5 gb"))
+                    .defaultValue(MemorySize.parse("8 gb"))
                     .withFallbackKeys(oldOperatorConfigKey("budget.taskmanager.memory"))
                     .withDescription("Taskmanager budget of the memory size while tuning memory.");
 

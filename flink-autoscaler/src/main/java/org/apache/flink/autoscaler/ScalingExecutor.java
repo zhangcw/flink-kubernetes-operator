@@ -134,7 +134,7 @@ public class ScalingExecutor<KEY, Context extends JobAutoScalerContext<KEY>> {
 
         // 如果config overrides中没有内存配置，则说明从未进行过扩缩容（扩缩容是默认打开内存扩缩）
         var neverScaled =
-                autoScalerStateStore
+                !autoScalerStateStore
                         .getConfigChanges(context)
                         .getOverrides()
                         .containsKey(TaskManagerOptions.TOTAL_PROCESS_MEMORY.key());
@@ -535,24 +535,20 @@ public class ScalingExecutor<KEY, Context extends JobAutoScalerContext<KEY>> {
             ConfigChanges configOverrides,
             Map<String, String> parallelismOverrides,
             Configuration conf) {
-        var tmSlots = calculateTaskmanagerSlots(parallelismOverrides, conf);
+        var tmSlots = calculateTaskmanagerSlots(parallelismOverrides);
         double cpuOverride = 0.1 * tmSlots;
         cpuOverride = Double.parseDouble(String.format("%.2f", cpuOverride));
         LOG.debug("Override {}: {}", KubernetesConfigOptions.TASK_MANAGER_CPU, cpuOverride);
         configOverrides.addOverride(KubernetesConfigOptions.TASK_MANAGER_CPU, cpuOverride);
     }
 
-    private int calculateTaskmanagerSlots(
-            Map<String, String> parallelismOverrides, Configuration conf) {
+    private int calculateTaskmanagerSlots(Map<String, String> parallelismOverrides) {
         var maxParallelism = 1;
         for (Map.Entry<String, String> entry : parallelismOverrides.entrySet()) {
-            var override = Integer.parseInt(entry.getValue());
-            if (override > maxParallelism) {
-                maxParallelism = override;
-            }
+            maxParallelism = Math.max(maxParallelism, Integer.parseInt(entry.getValue()));
         }
-        var taskSlots = conf.get(TaskManagerOptions.NUM_TASK_SLOTS);
-        var tmNumber = Math.ceil((double) maxParallelism / taskSlots);
+        var tmMaxSlots = 10;
+        var tmNumber = Math.ceil((double) maxParallelism / tmMaxSlots);
         return (int) Math.ceil((double) maxParallelism / tmNumber);
     }
 

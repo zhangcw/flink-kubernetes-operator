@@ -186,20 +186,34 @@ public class MemoryTuning {
         // to the METASPACE
         MemorySize newMetaspaceSize =
                 determineNewSize(getUsage(METASPACE_MEMORY_USED, globalMetrics), config, memBudget);
+
+        // 原有的内存扩缩时，并没有根据TM的slot的调整而调整。
+        // 这样会造成tm的slot增长后，内存还是按照原来是使用情况分配的，会造成内存不足，频繁GC
+        // MemorySize newHeapSize =
+        //        determineNewSize(getUsage(HEAP_MEMORY_USED, globalMetrics), config, memBudget);
         MemorySize newHeapSize =
-                determineNewSize(getUsage(HEAP_MEMORY_USED, globalMetrics), config, memBudget);
-        // 先按照该默认值分配托管内存
-        MemorySize defaultManagedMemSize = MemorySize.parse("400 mb");
+                adjustJavaHeapMemory(context, scalingSummaries, evaluatedMetrics, memBudget);
+
+        // 先按照该默认值分配托管内存，默认每个slot分配128MB
+        MemorySize defaultManagedMemSize =
+                MemorySize.parse("128 mb")
+                        .multiply(
+                                context.getConfiguration().get(TaskManagerOptions.NUM_TASK_SLOTS));
         MemorySize newManagedSize =
                 adjustManagedMemory(
                         getUsage(MANAGED_MEMORY_USED, globalMetrics),
                         defaultManagedMemSize,
                         config,
                         memBudget);
+        // 如果新计算出来的托管内存小于0，则使用上述默认的托管内存大小
+        if (newManagedSize.compareTo(MemorySize.ZERO) <= 0) {
+            newManagedSize = new MemorySize(memBudget.budget(defaultManagedMemSize.getBytes()));
+        }
+        LOG.info("===============>>> newManagedSize: {}", newManagedSize);
         // Rescale heap according to scaling decision after distributing all memory pools
-        newHeapSize =
-                MemoryScaling.applyMemoryScaling(
-                        newHeapSize, memBudget, context, scalingSummaries, evaluatedMetrics);
+        // newHeapSize =
+        //        MemoryScaling.applyMemoryScaling(
+        //                newHeapSize, memBudget, context, scalingSummaries, evaluatedMetrics);
 
         MemorySize totalMemory =
                 new MemorySize(maxMemoryBySpec.getBytes() - memBudget.getRemaining());
@@ -307,6 +321,13 @@ public class MemoryTuning {
 
         // Prepare the tuning config for new configuration values
         var tuningConfig = new ConfigChanges();
+        // update taskmanager slots configuration
+        LOG.info(
+                "============>>> add override: TaskManagerOptions.NUM_TASK_SLOTS: {}",
+                context.getConfiguration().get(TaskManagerOptions.NUM_TASK_SLOTS));
+        tuningConfig.addOverride(
+                TaskManagerOptions.NUM_TASK_SLOTS,
+                context.getConfiguration().get(TaskManagerOptions.NUM_TASK_SLOTS));
         // Adjust the total container memory
         tuningConfig.addOverride(TaskManagerOptions.TOTAL_PROCESS_MEMORY, totalMemory);
         // We do not set the framework/task heap memory because those are automatically derived from
@@ -377,6 +398,62 @@ public class MemoryTuning {
         targetSizeBytes = memoryBudget.budget(targetSizeBytes);
 
         return new MemorySize(targetSizeBytes);
+    }
+
+    private static MemorySize adjustJavaHeapMemory(
+            JobAutoScalerContext<?> context,
+            Map<JobVertexID, ScalingSummary> scalingSummaries,
+            EvaluatedMetrics evaluatedMetrics,
+            MemoryBudget memBudget) {
+        Configuration config = context.getConfiguration();
+
+        MemorySize memoryUsed =
+                new MemorySize(
+                        (long)
+                                evaluatedMetrics
+                                        .getGlobalMetrics()
+                                        .get(HEAP_MEMORY_USED)
+                                        .getAverage());
+        int numTaskSlotsPerTM = config.get(TaskManagerOptions.NUM_TASK_SLOTS);
+        LOG.info("================>>> numTaskSlotsPerTM: {}", numTaskSlotsPerTM);
+        int newNumTaskSlotsPerTM =
+                calculateSlotsPerTm(evaluatedMetrics.getVertexMetrics(), scalingSummaries);
+        LOG.info("================>>> newNumTaskSlotsPerTM: {}", newNumTaskSlotsPerTM);
+        double overheadFactor = 1 + config.get(AutoScalerOptions.MEMORY_TUNING_OVERHEAD);
+        long targetSizeBytes = (long) (memoryUsed.getBytes() * overheadFactor);
+        // 每个slot至少分配128MB
+        targetSizeBytes =
+                Math.max(targetSizeBytes, MemorySize.parseBytes("128 mb") * numTaskSlotsPerTM);
+
+        config.set(TaskManagerOptions.NUM_TASK_SLOTS, newNumTaskSlotsPerTM);
+        LOG.info("================>>> memoryUsed: {}", memoryUsed);
+        LOG.info("================>>> targetSizeBytes: {}", targetSizeBytes);
+
+        // 按照扩缩容前后每个task manager的slot数，计算出每个task manager的堆内存
+        targetSizeBytes = targetSizeBytes * newNumTaskSlotsPerTM / numTaskSlotsPerTM;
+        LOG.info("================>>> targetSizeBytes: {}", targetSizeBytes);
+        targetSizeBytes = memBudget.budget(targetSizeBytes);
+        return new MemorySize(targetSizeBytes);
+    }
+
+    private static int calculateSlotsPerTm(
+            Map<JobVertexID, Map<ScalingMetric, EvaluatedScalingMetric>> evaluatedMetrics,
+            Map<JobVertexID, ScalingSummary> summaries) {
+        int maxParallelism = 1;
+
+        for (Map.Entry<JobVertexID, Map<ScalingMetric, EvaluatedScalingMetric>> entry :
+                evaluatedMetrics.entrySet()) {
+            JobVertexID id = entry.getKey();
+            Map<ScalingMetric, EvaluatedScalingMetric> metrics = entry.getValue();
+            var parallelism = (int) metrics.get(ScalingMetric.PARALLELISM).getCurrent();
+            if (summaries.containsKey(id)) {
+                parallelism = summaries.get(id).getNewParallelism();
+            }
+            maxParallelism = Math.max(maxParallelism, parallelism);
+        }
+        var tmMaxSlots = 10;
+        var tmNumber = Math.ceil((double) maxParallelism / tmMaxSlots);
+        return (int) Math.ceil((double) maxParallelism / tmNumber);
     }
 
     private static MemorySize adjustManagedMemory(
