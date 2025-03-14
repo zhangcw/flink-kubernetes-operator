@@ -143,7 +143,6 @@ public abstract class AbstractFlinkResourceReconciler<
         SPEC currentDeploySpec = cr.getSpec();
 
         handleExceptionIfExist(ctx);
-        prepareForAutoScaler(ctx);
         applyAutoscaler(ctx);
 
         var reconciliationState = reconciliationStatus.getState();
@@ -199,13 +198,8 @@ public abstract class AbstractFlinkResourceReconciler<
     }
 
     private void applyAutoscaler(FlinkResourceContext<CR> ctx) throws Exception {
-        var autoScalerCtx = ctx.getJobAutoScalerContext();
-        boolean autoscalerEnabled =
-                ctx.getResource().getSpec().getJob() != null
-                        && ctx.getObserveConfig().getBoolean(AUTOSCALER_ENABLED);
-        autoScalerCtx.getConfiguration().set(AUTOSCALER_ENABLED, autoscalerEnabled);
-
-        autoscaler.scale(autoScalerCtx);
+        prepareForAutoScaler(ctx);
+        autoscaler.scale(ctx.getJobAutoScalerContext());
     }
 
     private void triggerSpecChangeEvent(CR cr, DiffResult<SPEC> specDiff, KubernetesClient client) {
@@ -644,22 +638,42 @@ public abstract class AbstractFlinkResourceReconciler<
     }
 
     private void prepareForAutoScaler(FlinkResourceContext<CR> ctx) {
-        // 检查job plan，确认是否所有的vertices都支持自动扩缩。
-        // 如果不支持，则把不支持的vertex添加到VERTEX_EXCLUDE_IDS中
-        // 只需要任务新启动时检查一次即可，不用后续每次reconcile都检查
+        var autoScalerCtx = ctx.getJobAutoScalerContext();
+
         boolean autoscalerEnabled =
                 ctx.getResource().getSpec().getJob() != null
                         && ctx.getObserveConfig() != null
                         && ctx.getObserveConfig().get(AUTOSCALER_ENABLED);
-        if (autoscalerEnabled && startRecently(ctx)) {
+        autoScalerCtx.getConfiguration().set(AUTOSCALER_ENABLED, autoscalerEnabled);
+
+        if (autoscalerEnabled) {
             try {
-                Set<String> globalVertexIds = getGlobalOperatorVertexIds(ctx);
-                if (!globalVertexIds.isEmpty()) {
-                    LOG.info(
-                            "globalVertexIds should be excluded while scaling: {}",
-                            globalVertexIds);
-                    addToAutoScalerExcludeVertexIds(ctx, globalVertexIds);
+                // 检查job plan，确认是否所有的vertices都支持自动扩缩。
+                // 如果不支持，则把不支持的vertex添加到VERTEX_EXCLUDE_IDS中
+                // 只需要任务新启动时检查一次即可，不用后续每次reconcile都检查
+                if (startRecently(ctx)) {
+                    Set<String> globalVertexIds = getGlobalOperatorVertexIds(ctx);
+                    if (!globalVertexIds.isEmpty()) {
+                        LOG.info(
+                                "globalVertexIds should be excluded while scaling: {}",
+                                globalVertexIds);
+                        addToAutoScalerExcludeVertexIds(autoScalerCtx, globalVertexIds);
+                    }
                 }
+
+                // 设置TM的slot数，TM的slot数在扩缩容时会变化的，如果有变化，会写入configOverride中。
+                // 如果configOverrides中有，则从configOverrides中读取，否则就不配置，任务最初启动时的默认值
+                Map<String, String> overrides =
+                        autoscaler.getStateStore().getConfigChanges(autoScalerCtx).getOverrides();
+                String slotOverrideKey = TaskManagerOptions.NUM_TASK_SLOTS.key();
+                if (overrides.containsKey(slotOverrideKey)) {
+                    autoScalerCtx
+                            .getConfiguration()
+                            .set(
+                                    TaskManagerOptions.NUM_TASK_SLOTS,
+                                    Integer.parseInt(overrides.get(slotOverrideKey)));
+                }
+
             } catch (Exception e) {
                 throw new RuntimeException(e);
             }
@@ -693,11 +707,11 @@ public abstract class AbstractFlinkResourceReconciler<
     }
 
     private void addToAutoScalerExcludeVertexIds(
-            FlinkResourceContext<CR> ctx, Set<String> excludeVertexIds) throws Exception {
+            KubernetesJobAutoScalerContext autoScalerCtx, Set<String> excludeVertexIds)
+            throws Exception {
         if (excludeVertexIds.isEmpty()) {
             return;
         }
-        var autoScalerCtx = ctx.getJobAutoScalerContext();
         var autoscalerConf = autoScalerCtx.getConfiguration();
         Set<String> excludeIds = new HashSet<>(autoscalerConf.get(VERTEX_EXCLUDE_IDS));
         if (excludeIds.containsAll(excludeVertexIds)) {
