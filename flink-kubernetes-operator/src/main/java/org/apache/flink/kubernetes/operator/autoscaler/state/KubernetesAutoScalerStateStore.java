@@ -263,6 +263,11 @@ public class KubernetesAutoScalerStateStore
         configMapStore.flush(jobContext);
     }
 
+    @Override
+    public void removeInfoFromCache(ResourceID resourceID) {
+        configMapStore.removeInfoFromCache(resourceID);
+    }
+
     @SneakyThrows
     protected static String serializeScalingHistory(
             Map<JobVertexID, SortedMap<Instant, ScalingSummary>> scalingHistory) {

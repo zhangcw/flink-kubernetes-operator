@@ -348,6 +348,11 @@ public class JdbcAutoScalerStateStore<KEY, Context extends JobAutoScalerContext<
     }
 
     @Override
+    public void removeInfoFromCache(KEY jobKey) {
+        jdbcStateStore.removeInfoFromCache(getSerializeKey(jobKey));
+    }
+
+    @Override
     public ExceptionHistory getExceptionHistory(Context jobContext) throws Exception {
         ExceptionHistory exceptionHistory = new ExceptionHistory();
         Optional<String> serializedExceptionHistory =

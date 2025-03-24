@@ -92,6 +92,8 @@ public interface AutoScalerStateStore<KEY, Context extends JobAutoScalerContext<
      */
     void flush(Context jobContext) throws Exception;
 
+    void removeInfoFromCache(KEY jobKey);
+
     void storeExceptionHistory(Context jobContext, ExceptionHistory exceptionHistory)
             throws Exception;
 

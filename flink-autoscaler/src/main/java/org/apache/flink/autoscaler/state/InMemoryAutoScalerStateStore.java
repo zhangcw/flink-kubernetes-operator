@@ -194,6 +194,13 @@ public class InMemoryAutoScalerStateStore<KEY, Context extends JobAutoScalerCont
     }
 
     @Override
+    public void removeInfoFromCache(KEY jobKey) {
+        scalingHistoryStore.remove(jobKey);
+        collectedMetricsStore.remove(jobKey);
+        parallelismOverridesStore.remove(jobKey);
+    }
+
+    @Override
     public void close() throws Exception {}
 
     public ExceptionHistory getExceptionHistory(Context jobContext) throws Exception {
