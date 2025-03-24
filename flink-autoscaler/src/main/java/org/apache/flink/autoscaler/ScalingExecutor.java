@@ -20,9 +20,7 @@ package org.apache.flink.autoscaler;
 import org.apache.flink.annotation.VisibleForTesting;
 import org.apache.flink.autoscaler.config.AutoScalerOptions;
 import org.apache.flink.autoscaler.event.AutoScalerEventHandler;
-import org.apache.flink.autoscaler.metrics.EvaluatedMetrics;
-import org.apache.flink.autoscaler.metrics.EvaluatedScalingMetric;
-import org.apache.flink.autoscaler.metrics.ScalingMetric;
+import org.apache.flink.autoscaler.metrics.*;
 import org.apache.flink.autoscaler.resources.NoopResourceCheck;
 import org.apache.flink.autoscaler.resources.ResourceCheck;
 import org.apache.flink.autoscaler.state.AutoScalerStateStore;
@@ -131,6 +129,7 @@ public class ScalingExecutor<KEY, Context extends JobAutoScalerContext<KEY>> {
             throws Exception {
         var conf = context.getConfiguration();
         var restartTime = scalingTracking.getMaxRestartTimeOrDefault(conf);
+        var currentTmSlots = conf.get(TaskManagerOptions.NUM_TASK_SLOTS);
 
         // 如果config overrides中没有内存配置，则说明从未进行过扩缩容（扩缩容是默认打开内存扩缩）
         var neverScaled =
@@ -192,7 +191,8 @@ public class ScalingExecutor<KEY, Context extends JobAutoScalerContext<KEY>> {
                 getVertexParallelismOverrides(
                         evaluatedMetrics.getVertexMetrics(), scalingSummaries);
 
-        updateTaskmanagerCpuAccordingToParallelism(configOverrides, parallelismOverrides, conf);
+        updateTaskmanagerCpuAccordingToParallelism(
+                configOverrides, parallelismOverrides, currentTmSlots, context);
 
         autoScalerStateStore.storeParallelismOverrides(context, parallelismOverrides);
 
@@ -534,12 +534,62 @@ public class ScalingExecutor<KEY, Context extends JobAutoScalerContext<KEY>> {
     private void updateTaskmanagerCpuAccordingToParallelism(
             ConfigChanges configOverrides,
             Map<String, String> parallelismOverrides,
-            Configuration conf) {
+            int currentTmSlots,
+            Context context) {
+        double currentCpuPerSlot =
+                context.getConfiguration().get(KubernetesConfigOptions.TASK_MANAGER_CPU)
+                        / currentTmSlots;
         var tmSlots = calculateTaskmanagerSlots(parallelismOverrides);
-        double cpuOverride = 0.1 * tmSlots;
+        double cpuPerSlot = adjustTaskmanagerCpuRequestPerSlot(currentCpuPerSlot, context);
+        LOG.debug("================>>> cpuPerSlot: {}", cpuPerSlot);
+        double cpuOverride = cpuPerSlot * tmSlots;
         cpuOverride = Double.parseDouble(String.format("%.2f", cpuOverride));
         LOG.debug("Override {}: {}", KubernetesConfigOptions.TASK_MANAGER_CPU, cpuOverride);
         configOverrides.addOverride(KubernetesConfigOptions.TASK_MANAGER_CPU, cpuOverride);
+    }
+
+    private double adjustTaskmanagerCpuRequestPerSlot(double currentCpuPerSlot, Context context) {
+        // cpu扩容因子
+        double cpuScaleUpFactor = 1.5;
+        // cpu扩容阈值，如果cpu使用率超过95%，则扩容
+        double cpuScaleUpThreshold = 0.95;
+        // cpu缩容因子
+        double cpuScaleDownFactor = 0.5;
+        // cpu缩容阈值，如果cpu使用率低于25%，则缩容
+        double cpuScaleDownThreshold = 0.25;
+        // cpu最大和最小request值
+        double maxCpuRequestPerSlot = 10.0;
+        double minCpuRequestPerSlot = 0.025;
+
+        try {
+            Instant firstMetricInstant =
+                    autoScalerStateStore.getCollectedMetrics(context).lastKey();
+            Instant endTime = Instant.now();
+            Instant startTime = endTime.minus(Duration.ofHours(24));
+            if (firstMetricInstant != null && firstMetricInstant.isAfter(startTime)) {
+                startTime = firstMetricInstant;
+            }
+            ExternalCpuUsageMetrics cpuUsage =
+                    ExternalMetricUtils.getCpuUsage(context, startTime, endTime);
+            if (cpuUsage == null
+                    || cpuUsage.getCpuUsage() == null
+                    || cpuUsage.getCpuLimit() == null) {
+                return currentCpuPerSlot;
+            }
+
+            LOG.debug("================>>> cpuUsage: {}", cpuUsage);
+            LOG.debug("================>>> currentCpuPerSlot: {}", currentCpuPerSlot);
+            if (cpuUsage.getCpuUsage() >= cpuScaleUpThreshold * cpuUsage.getCpuLimit()) {
+                return Math.min(currentCpuPerSlot * cpuScaleUpFactor, minCpuRequestPerSlot);
+            }
+
+            if (cpuUsage.getCpuUsage() < cpuScaleDownThreshold * cpuUsage.getCpuLimit()) {
+                return Math.max(currentCpuPerSlot * cpuScaleDownFactor, maxCpuRequestPerSlot);
+            }
+        } catch (Exception e) {
+            LOG.error("Failed to get cpu usage metrics, error: ", e);
+        }
+        return currentCpuPerSlot;
     }
 
     private int calculateTaskmanagerSlots(Map<String, String> parallelismOverrides) {

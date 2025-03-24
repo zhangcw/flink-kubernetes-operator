@@ -403,4 +403,48 @@ public class AutoScalerOptions {
                     .defaultValue(2.0)
                     .withFallbackKeys(oldOperatorConfigKey("budget.taskmanager.cpu"))
                     .withDescription("Taskmanager budget of the cpu amount while scaling.");
+
+    public static final ConfigOption<String> EXTERNAL_CPU_METRICS_QUERY_URL =
+            autoScalerConfig("external-cpu-metrics.query-url")
+                    .stringType()
+                    .defaultValue(null)
+                    .withFallbackKeys(oldOperatorConfigKey("external-cpu-metrics.query-url"))
+                    .withDescription("Query url of external cpu metrics.");
+
+    public static final ConfigOption<String> EXTERNAL_CPU_METRICS_QUERY_SQL_TEMPLATE =
+            autoScalerConfig("external-cpu-metrics.query-sql-template")
+                    .stringType()
+                    .defaultValue(null)
+                    .withFallbackKeys(
+                            oldOperatorConfigKey("external-cpu-metrics.query-sql-template"))
+                    .withDescription("Query sql template of external cpu metrics.");
+
+    public static final ConfigOption<String> EXTERNAL_CPU_METRICS_QUERY_TABLE =
+            autoScalerConfig("external-cpu-metrics.query-table-name")
+                    .stringType()
+                    .defaultValue(null)
+                    .withFallbackKeys(oldOperatorConfigKey("external-cpu-metrics.query-table"))
+                    .withDescription("Query table name of external cpu metrics.");
+
+    public static final ConfigOption<String> EXTERNAL_CPU_METRICS_QUERY_TABLE_PREFER_STORAGE =
+            autoScalerConfig("external-cpu-metrics.query-table-prefer-storage")
+                    .stringType()
+                    .defaultValue(null)
+                    .withFallbackKeys(
+                            oldOperatorConfigKey("external-cpu-metrics.query-table-prefer-storage"))
+                    .withDescription("Query table prefer storage of external cpu metrics.");
+
+    public static final ConfigOption<String> EXTERNAL_CPU_METRICS_QUERY_APP_CODE =
+            autoScalerConfig("external-cpu-metrics.query-app-code")
+                    .stringType()
+                    .defaultValue(null)
+                    .withFallbackKeys(oldOperatorConfigKey("external-cpu-metrics.query-app-code"))
+                    .withDescription("app code to query external cpu metrics.");
+
+    public static final ConfigOption<String> EXTERNAL_CPU_METRICS_QUERY_APP_SECRET =
+            autoScalerConfig("external-cpu-metrics.query-app-secret")
+                    .stringType()
+                    .defaultValue(null)
+                    .withFallbackKeys(oldOperatorConfigKey("external-cpu-metrics.query-app-secret"))
+                    .withDescription("app secret to query external cpu metrics.");
 }
