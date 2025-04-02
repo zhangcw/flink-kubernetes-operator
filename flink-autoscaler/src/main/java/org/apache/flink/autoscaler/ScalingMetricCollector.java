@@ -64,6 +64,7 @@ import java.util.Set;
 import java.util.SortedMap;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -536,10 +537,22 @@ public abstract class ScalingMetricCollector<KEY, Context extends JobAutoScalerC
 
     public JobDetailsInfo getJobDetailsInfo(
             JobAutoScalerContext<KEY> context, Duration clientTimeout) throws Exception {
-        try (var restClient = context.getRestClusterClient()) {
-            return restClient
-                    .getJobDetails(context.getJobID())
-                    .get(clientTimeout.toSeconds(), TimeUnit.SECONDS);
+        final int maxRetries = 3;
+        final long retryInterval = 3000;
+        int retryCount = 0;
+        while (true) {
+            try (var restClient = context.getRestClusterClient()) {
+                return restClient
+                        .getJobDetails(context.getJobID())
+                        .get(clientTimeout.toSeconds(), TimeUnit.SECONDS);
+            } catch (TimeoutException e) {
+                if (retryCount++ >= maxRetries) {
+                    throw new TimeoutException(
+                            "Timeout to get job detail info after " + (maxRetries) + " tries");
+                }
+                LOG.warn("Failed to get job detail info, retrying...");
+                TimeUnit.MILLISECONDS.sleep(retryInterval);
+            }
         }
     }
 

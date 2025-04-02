@@ -96,7 +96,7 @@ public class AutoscalerFactory {
         var user = config.get(KubernetesOperatorConfigOptions.JDBC_USERNAME);
         var password = config.get(KubernetesOperatorConfigOptions.JDBC_PASSWORD_ENV_VARIABLE);
         HikariConfig hikariConfig = new HikariConfig();
-        hikariConfig.setDriverClassName("com.mysql.jdbc.Driver");
+        hikariConfig.setDriverClassName("com.mysql.cj.jdbc.Driver");
         hikariConfig.setJdbcUrl(jdbcUrl);
         hikariConfig.setUsername(user);
         hikariConfig.setPassword(password);

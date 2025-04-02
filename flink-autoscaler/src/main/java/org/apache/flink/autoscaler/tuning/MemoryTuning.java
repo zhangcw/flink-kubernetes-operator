@@ -209,7 +209,6 @@ public class MemoryTuning {
         if (newManagedSize.compareTo(MemorySize.ZERO) <= 0) {
             newManagedSize = new MemorySize(memBudget.budget(defaultManagedMemSize.getBytes()));
         }
-        LOG.info("===============>>> newManagedSize: {}", newManagedSize);
         // Rescale heap according to scaling decision after distributing all memory pools
         // newHeapSize =
         //        MemoryScaling.applyMemoryScaling(
@@ -322,9 +321,6 @@ public class MemoryTuning {
         // Prepare the tuning config for new configuration values
         var tuningConfig = new ConfigChanges();
         // update taskmanager slots configuration
-        LOG.info(
-                "============>>> add override: TaskManagerOptions.NUM_TASK_SLOTS: {}",
-                context.getConfiguration().get(TaskManagerOptions.NUM_TASK_SLOTS));
         tuningConfig.addOverride(
                 TaskManagerOptions.NUM_TASK_SLOTS,
                 context.getConfiguration().get(TaskManagerOptions.NUM_TASK_SLOTS));
@@ -415,10 +411,8 @@ public class MemoryTuning {
                                         .get(HEAP_MEMORY_USED)
                                         .getAverage());
         int numTaskSlotsPerTM = config.get(TaskManagerOptions.NUM_TASK_SLOTS);
-        LOG.info("================>>> numTaskSlotsPerTM: {}", numTaskSlotsPerTM);
         int newNumTaskSlotsPerTM =
                 calculateSlotsPerTm(evaluatedMetrics.getVertexMetrics(), scalingSummaries);
-        LOG.info("================>>> newNumTaskSlotsPerTM: {}", newNumTaskSlotsPerTM);
         double overheadFactor = 1 + config.get(AutoScalerOptions.MEMORY_TUNING_OVERHEAD);
         long targetSizeBytes = (long) (memoryUsed.getBytes() * overheadFactor);
         // 每个slot至少分配128MB
@@ -426,12 +420,9 @@ public class MemoryTuning {
                 Math.max(targetSizeBytes, MemorySize.parseBytes("128 mb") * numTaskSlotsPerTM);
 
         config.set(TaskManagerOptions.NUM_TASK_SLOTS, newNumTaskSlotsPerTM);
-        LOG.info("================>>> memoryUsed: {}", memoryUsed);
-        LOG.info("================>>> targetSizeBytes: {}", targetSizeBytes);
 
         // 按照扩缩容前后每个task manager的slot数，计算出每个task manager的堆内存
         targetSizeBytes = targetSizeBytes * newNumTaskSlotsPerTM / numTaskSlotsPerTM;
-        LOG.info("================>>> targetSizeBytes: {}", targetSizeBytes);
         targetSizeBytes = memBudget.budget(targetSizeBytes);
         return new MemorySize(targetSizeBytes);
     }

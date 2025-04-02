@@ -875,7 +875,6 @@ public abstract class AbstractFlinkService implements FlinkService {
         if (jmPodIp != null) {
             return jmPodIp;
         }
-        LOG.warn("================>>> couldn't get jobmanager ip from cache!!!");
         try (FlinkKubeClient client =
                 FlinkKubeClientFactory.getInstance().fromConfiguration(conf, "client")) {
             for (int retryAttempt = 0; retryAttempt < 3; retryAttempt++) {

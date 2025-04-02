@@ -541,7 +541,6 @@ public class ScalingExecutor<KEY, Context extends JobAutoScalerContext<KEY>> {
                         / currentTmSlots;
         var tmSlots = calculateTaskmanagerSlots(parallelismOverrides);
         double cpuPerSlot = adjustTaskmanagerCpuRequestPerSlot(currentCpuPerSlot, context);
-        LOG.debug("================>>> cpuPerSlot: {}", cpuPerSlot);
         double cpuOverride = cpuPerSlot * tmSlots;
         cpuOverride = Double.parseDouble(String.format("%.2f", cpuOverride));
         LOG.debug("Override {}: {}", KubernetesConfigOptions.TASK_MANAGER_CPU, cpuOverride);
@@ -577,8 +576,6 @@ public class ScalingExecutor<KEY, Context extends JobAutoScalerContext<KEY>> {
                 return currentCpuPerSlot;
             }
 
-            LOG.debug("================>>> cpuUsage: {}", cpuUsage);
-            LOG.debug("================>>> currentCpuPerSlot: {}", currentCpuPerSlot);
             if (cpuUsage.getCpuUsage() >= cpuScaleUpThreshold * cpuUsage.getCpuLimit()) {
                 return Math.min(currentCpuPerSlot * cpuScaleUpFactor, minCpuRequestPerSlot);
             }

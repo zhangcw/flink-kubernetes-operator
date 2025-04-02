@@ -46,7 +46,6 @@ public class BkBaseFlinkResourceListener implements FlinkResourceListener {
         printlnFlinkDeploymentJobStatus("FlinkDeployment newStatus", flinkResource, newStatus);
         if (!previousStatus.getJobStatus().getState().equals(JobStatus.RUNNING)
                 && newStatus.getJobStatus().getState().equals(JobStatus.RUNNING)) {
-            LOG.info("================>>> refresh jobmanager ip");
             JobManagerIpCache.refresh(
                     flinkResource.getMetadata().getName(),
                     flinkResource.getMetadata().getNamespace());

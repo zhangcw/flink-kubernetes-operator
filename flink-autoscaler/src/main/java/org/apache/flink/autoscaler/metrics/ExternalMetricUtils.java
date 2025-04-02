@@ -85,11 +85,8 @@ public class ExternalMetricUtils {
         bodyMap.put("sql", sql);
         try {
             String body = mapper.writeValueAsString(bodyMap);
-            LOG.info("===============>>> httpUrl: {} body: {}", httpUrl, body);
             String resp = HttpUtils.post(httpUrl, body);
-            LOG.info("===============>>> resp: {}", resp);
             ExternalCpuUsageMetrics cpuUsage = ExternalCpuUsageMetrics.fromQueryData(resp);
-            LOG.info("===============>>> cpuUsage: {}", cpuUsage);
             return cpuUsage;
         } catch (Exception e) {
             LOG.error("Failed to parse the response of query cpu metrics from external url", e);

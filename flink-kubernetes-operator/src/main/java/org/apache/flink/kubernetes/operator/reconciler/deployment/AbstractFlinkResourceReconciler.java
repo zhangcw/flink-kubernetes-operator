@@ -679,12 +679,16 @@ public abstract class AbstractFlinkResourceReconciler<
                 // 如果不支持，则把不支持的vertex添加到VERTEX_EXCLUDE_IDS中
                 // 只需要任务新启动时检查一次即可，不用后续每次reconcile都检查
                 if (startRecently(ctx)) {
-                    Set<String> globalVertexIds = getGlobalOperatorVertexIds(ctx);
-                    if (!globalVertexIds.isEmpty()) {
-                        LOG.info(
-                                "globalVertexIds should be excluded while scaling: {}",
-                                globalVertexIds);
-                        addToAutoScalerExcludeVertexIds(autoScalerCtx, globalVertexIds);
+                    try {
+                        Set<String> globalVertexIds = getGlobalOperatorVertexIds(ctx);
+                        if (!globalVertexIds.isEmpty()) {
+                            LOG.info(
+                                    "globalVertexIds should be excluded while scaling: {}",
+                                    globalVertexIds);
+                            addToAutoScalerExcludeVertexIds(autoScalerCtx, globalVertexIds);
+                        }
+                    } catch (Exception e) {
+                        LOG.warn("Failed to add globalVertexIds to AutoScalerExcludeVertexIds.", e);
                     }
                 }
 
