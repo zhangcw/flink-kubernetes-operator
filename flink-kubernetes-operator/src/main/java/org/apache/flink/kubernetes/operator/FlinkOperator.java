@@ -51,6 +51,7 @@ import org.apache.flink.kubernetes.operator.resources.ClusterResourceManager;
 import org.apache.flink.kubernetes.operator.service.FlinkResourceContextFactory;
 import org.apache.flink.kubernetes.operator.utils.EnvUtils;
 import org.apache.flink.kubernetes.operator.utils.EventRecorder;
+import org.apache.flink.kubernetes.operator.utils.JobManagerIpCache;
 import org.apache.flink.kubernetes.operator.utils.KubernetesClientUtils;
 import org.apache.flink.kubernetes.operator.utils.StatusRecorder;
 import org.apache.flink.kubernetes.operator.utils.ValidatorUtils;
@@ -191,6 +192,16 @@ public class FlinkOperator {
                         eventRecorder,
                         canaryResourceManager);
         registeredControllers.add(operator.register(controller, this::overrideControllerConfigs));
+
+        buildDeploymentJobManagerIpCache();
+    }
+
+    private void buildDeploymentJobManagerIpCache() {
+        Set<String> namespaces = configManager.getOperatorConfiguration().getWatchedNamespaces();
+        if (namespaces.isEmpty() && System.getenv().get("NAMESPACE") != null) {
+            namespaces.add(System.getenv().get("NAMESPACE"));
+        }
+        JobManagerIpCache.watchFlinkJobManagerPod(client, namespaces);
     }
 
     @VisibleForTesting

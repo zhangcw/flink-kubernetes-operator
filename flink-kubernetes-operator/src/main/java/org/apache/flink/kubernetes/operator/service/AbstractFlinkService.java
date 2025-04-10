@@ -22,6 +22,7 @@ import org.apache.flink.api.common.JobID;
 import org.apache.flink.api.common.JobStatus;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.autoscaler.utils.JobStatusUtils;
+import org.apache.flink.client.deployment.ClusterRetrieveException;
 import org.apache.flink.client.program.rest.RestClusterClient;
 import org.apache.flink.configuration.CheckpointingOptions;
 import org.apache.flink.configuration.Configuration;
@@ -29,7 +30,10 @@ import org.apache.flink.configuration.RestOptions;
 import org.apache.flink.configuration.SecurityOptions;
 import org.apache.flink.core.execution.RestoreMode;
 import org.apache.flink.kubernetes.configuration.KubernetesConfigOptions;
+import org.apache.flink.kubernetes.kubeclient.FlinkKubeClient;
+import org.apache.flink.kubernetes.kubeclient.FlinkKubeClientFactory;
 import org.apache.flink.kubernetes.kubeclient.decorators.ExternalServiceDecorator;
+import org.apache.flink.kubernetes.kubeclient.resources.KubernetesPod;
 import org.apache.flink.kubernetes.operator.api.FlinkDeployment;
 import org.apache.flink.kubernetes.operator.api.FlinkSessionJob;
 import org.apache.flink.kubernetes.operator.api.spec.FlinkSessionJobSpec;
@@ -53,6 +57,8 @@ import org.apache.flink.kubernetes.operator.utils.EnvUtils;
 import org.apache.flink.kubernetes.operator.utils.EventRecorder;
 import org.apache.flink.kubernetes.operator.utils.ExceptionUtils;
 import org.apache.flink.kubernetes.operator.utils.FlinkUtils;
+import org.apache.flink.kubernetes.operator.utils.JobManagerIpCache;
+import org.apache.flink.kubernetes.utils.KubernetesUtils;
 import org.apache.flink.runtime.client.JobStatusMessage;
 import org.apache.flink.runtime.highavailability.nonha.standalone.StandaloneClientHAServices;
 import org.apache.flink.runtime.jobmaster.JobResult;
@@ -113,6 +119,7 @@ import io.fabric8.kubernetes.client.dsl.Resource;
 import io.fabric8.kubernetes.client.dsl.Waitable;
 import lombok.SneakyThrows;
 import org.apache.commons.lang3.ObjectUtils;
+import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -318,26 +325,30 @@ public abstract class AbstractFlinkService implements FlinkService {
             throws Exception {
         var status = deployment.getStatus();
         String savepointPath = null;
-        try (var clusterClient = getClusterClient(conf)) {
-            switch (suspendMode) {
-                case SAVEPOINT:
-                    savepointPath = savepointJobOrError(clusterClient, status, conf);
-                    break;
-                case STATELESS:
-                    if (ReconciliationUtils.isJobCancellable(status)) {
-                        try {
-                            cancelJobOrError(clusterClient, status, true);
-                        } catch (Exception ex) {
-                            // We can simply delete the deployment for stateless
+        var jmPodIp = getJobManagerPodIp(conf);
+        if (jmPodIp != null) {
+            try (var clusterClient = getClusterClient(conf)) {
+                switch (suspendMode) {
+                    case SAVEPOINT:
+                        savepointPath = savepointJobOrError(clusterClient, status, conf);
+                        break;
+                    case STATELESS:
+                        if (ReconciliationUtils.isJobCancellable(status)) {
+                            try {
+                                cancelJobOrError(clusterClient, status, true);
+                            } catch (Exception ex) {
+                                // We can simply delete the deployment for stateless
+                            }
                         }
-                    }
-                    break;
-                case CANCEL:
-                    cancelJobOrError(clusterClient, status, false);
-                    // This is async we need to return
-                    return CancelResult.pending();
+                        break;
+                    case CANCEL:
+                        cancelJobOrError(clusterClient, status, false);
+                        // This is async we need to return
+                        return CancelResult.pending();
+                }
             }
         }
+
         if (suspendMode.deleteCluster() || deleteCluster) {
             deleteClusterDeployment(
                     deployment.getMetadata(), status, conf, suspendMode.deleteHaMeta());
@@ -823,21 +834,68 @@ public abstract class AbstractFlinkService implements FlinkService {
     public RestClusterClient<String> getClusterClient(Configuration conf) throws Exception {
         final String clusterId = conf.get(KubernetesConfigOptions.CLUSTER_ID);
         final String namespace = conf.get(KubernetesConfigOptions.NAMESPACE);
-        final int port = conf.getInteger(RestOptions.PORT);
-        Configuration operatorRestConf = conf;
-        if (SecurityOptions.isRestSSLEnabled(conf)) {
-            operatorRestConf = getOperatorRestConfig(conf);
+        final int port = Integer.parseInt(conf.get(RestOptions.BIND_PORT));
+        final boolean isServiceEnabled =
+                conf.get(KubernetesConfigOptions.KUBERNETES_SERVICE_ENABLED);
+        String host;
+        if (isServiceEnabled) {
+            host =
+                    ObjectUtils.firstNonNull(
+                            operatorConfig.getFlinkServiceHostOverride(),
+                            ExternalServiceDecorator.getNamespacedExternalServiceName(
+                                    clusterId, namespace));
+        } else {
+            host = getJobManagerPodIp(conf);
         }
-        final String host =
-                ObjectUtils.firstNonNull(
-                        operatorConfig.getFlinkServiceHostOverride(),
-                        ExternalServiceDecorator.getNamespacedExternalServiceName(
-                                clusterId, namespace));
-        final String restServerAddress = String.format("http://%s:%s", host, port);
-        return new RestClusterClient<>(
-                operatorRestConf,
-                clusterId,
-                (c, e) -> new StandaloneClientHAServices(restServerAddress));
+
+        if (host != null) {
+            Configuration operatorRestConf = conf;
+            if (SecurityOptions.isRestSSLEnabled(conf)) {
+                operatorRestConf = getOperatorRestConfig(conf);
+            }
+            final String restServerAddress = String.format("http://%s:%s", host, port);
+            operatorRestConf.set(RestOptions.BIND_ADDRESS, host);
+            operatorRestConf.set(RestOptions.BIND_PORT, String.valueOf(port));
+
+            return new RestClusterClient<>(
+                    operatorRestConf,
+                    clusterId,
+                    (c, e) -> new StandaloneClientHAServices(restServerAddress));
+        } else {
+            throw new RuntimeException(
+                    new ClusterRetrieveException(
+                            "Could not get the rest endpoint of " + clusterId));
+        }
+    }
+
+    private String getJobManagerPodIp(Configuration conf) {
+        final String clusterId = conf.get(KubernetesConfigOptions.CLUSTER_ID);
+        final String namespace = conf.get(KubernetesConfigOptions.NAMESPACE);
+        String jmPodIp = JobManagerIpCache.get(clusterId, namespace);
+        if (jmPodIp != null) {
+            return jmPodIp;
+        }
+        LOG.warn("================>>> couldn't get jobmanager ip from cache!!!");
+        try (FlinkKubeClient client =
+                FlinkKubeClientFactory.getInstance().fromConfiguration(conf, "client")) {
+            for (int retryAttempt = 0; retryAttempt < 3; retryAttempt++) {
+                List<KubernetesPod> podList =
+                        client.getPodsWithLabels(KubernetesUtils.getJobManagerSelectors(clusterId));
+                if (!podList.isEmpty()) {
+                    String podIp = podList.get(0).getInternalResource().getStatus().getPodIP();
+                    if (StringUtils.isNotBlank(podIp)) {
+                        JobManagerIpCache.set(clusterId, podIp);
+                        return podIp;
+                    }
+                }
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
+                }
+            }
+        }
+        return null;
     }
 
     @VisibleForTesting

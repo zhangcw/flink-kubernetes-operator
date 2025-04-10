@@ -303,7 +303,11 @@ public class JobVertexScaler<KEY, Context extends JobAutoScalerContext<KEY>> {
                         delayedScaleDown, vertex, conf, newParallelism, outsideUtilizationBound);
             }
             // If metrics are not fully collected, do not scale down.
-            LOG.info("Job metrics are not fully collected, scale-down is not supported.");
+            LOG.info(
+                    "Job metrics are not fully collected, scale-down is not supported: VertexId: {}, {} -> {}",
+                    vertex,
+                    currentParallelism,
+                    newParallelism);
             return ParallelismChange.noChange();
         }
     }

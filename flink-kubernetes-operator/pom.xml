@@ -81,7 +81,7 @@ under the License.
         <dependency>
             <groupId>org.apache.flink</groupId>
             <artifactId>flink-kubernetes</artifactId>
-            <version>${flink.version}</version>
+            <version>${flink.bkbaseVersion}</version>
         </dependency>
 
         <dependency>
@@ -233,6 +233,12 @@ under the License.
             <groupId>org.apache.flink</groupId>
             <artifactId>flink-autoscaler-plugin-jdbc</artifactId>
             <version>1.11.1-SNAPSHOT</version>
+            <scope>compile</scope>
+        </dependency>
+        <dependency>
+            <groupId>com.google.guava</groupId>
+            <artifactId>guava</artifactId>
+            <version>18.0</version>
             <scope>compile</scope>
         </dependency>
     </dependencies>

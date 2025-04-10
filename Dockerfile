@@ -25,7 +25,7 @@ WORKDIR /app
 
 COPY . .
 
-RUN --mount=type=cache,target=/root/.m2 mvn -ntp clean install -U -pl flink-autoscaler-plugin-jdbc,flink-kubernetes-standalone,flink-kubernetes-operator-api,flink-kubernetes-operator,flink-autoscaler,flink-kubernetes-webhook -Drat.skip=true -DskipTests=$SKIP_TESTS -Dfabric8.httpclient.impl="$HTTP_CLIENT"
+RUN --mount=type=cache,target=/root/.m2 mvn --settings settings.xml -ntp clean install -U -pl flink-autoscaler-plugin-jdbc,flink-kubernetes-standalone,flink-kubernetes-operator-api,flink-kubernetes-operator,flink-autoscaler,flink-kubernetes-webhook -Drat.skip=true -DskipTests=$SKIP_TESTS -Dfabric8.httpclient.impl="$HTTP_CLIENT"
 
 RUN cd /app/tools/license; mkdir jars; cd jars; \
     cp /app/flink-kubernetes-operator/target/flink-kubernetes-operator-*-shaded.jar . && \
