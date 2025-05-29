@@ -98,13 +98,21 @@ public class ApplicationReconciler
         }
 
         var jmDeployStatus = status.getJobManagerDeploymentStatus();
+        UpgradeMode upgradeMode =
+                status.getReconciliationStatus()
+                        .deserializeLastReconciledSpec()
+                        .getJob()
+                        .getUpgradeMode();
+        boolean isJmPodNeverStarted = FlinkUtils.jmPodNeverStarted(ctx.getJosdkContext());
+
+        LOG.info(
+                "jmDeployStatus: {}, upgradeMode: {}, isJmPodNeverStarted: {}",
+                jmDeployStatus,
+                upgradeMode,
+                isJmPodNeverStarted);
         if (jmDeployStatus != JobManagerDeploymentStatus.MISSING
-                && status.getReconciliationStatus()
-                                .deserializeLastReconciledSpec()
-                                .getJob()
-                                .getUpgradeMode()
-                        != UpgradeMode.LAST_STATE
-                && FlinkUtils.jmPodNeverStarted(ctx.getJosdkContext())) {
+                && upgradeMode != UpgradeMode.LAST_STATE
+                && isJmPodNeverStarted) {
             deleteJmThatNeverStarted(flinkService, deployment, deployConfig);
             return getJobUpgrade(ctx, deployConfig);
         }
