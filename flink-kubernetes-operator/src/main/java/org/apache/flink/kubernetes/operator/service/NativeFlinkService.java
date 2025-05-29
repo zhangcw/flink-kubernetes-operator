@@ -338,6 +338,10 @@ public class NativeFlinkService extends AbstractFlinkService {
                                 // Ignore all errors here as this is an optional step
                                 return null;
                             }
+                            var podName = JobManagerInfoCache.getPodName(clusterId);
+                            if (podName == null) {
+                                return null;
+                            }
                             return kubernetesClient
                                     .pods()
                                     .inNamespace(namespace)

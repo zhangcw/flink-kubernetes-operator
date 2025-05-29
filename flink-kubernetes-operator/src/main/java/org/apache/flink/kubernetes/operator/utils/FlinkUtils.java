@@ -54,6 +54,7 @@ import io.javaoperatorsdk.operator.api.reconciler.Context;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
@@ -426,9 +427,15 @@ public class FlinkUtils {
             Deployment deployment = depOpt.get();
             for (DeploymentCondition condition : deployment.getStatus().getConditions()) {
                 if (condition.getType().equals("Available")) {
-                    var createTs = deployment.getMetadata().getCreationTimestamp();
+                    var createTs = Instant.parse(deployment.getMetadata().getCreationTimestamp());
+                    var lastTransitionTime = Instant.parse(condition.getLastTransitionTime());
+                    LOG.info("Job deployment status condition: {}", condition);
+                    LOG.info(
+                            "Job deployment createTs: {}, status lastTransitionTime: {}",
+                            createTs,
+                            lastTransitionTime);
                     if ("False".equals(condition.getStatus())
-                            && createTs.equals(condition.getLastTransitionTime())) {
+                            && lastTransitionTime.minusSeconds(10).isBefore(createTs)) {
                         return true;
                     }
                 }

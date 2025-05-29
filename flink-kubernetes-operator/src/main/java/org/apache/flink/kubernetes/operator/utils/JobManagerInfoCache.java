@@ -115,6 +115,7 @@ public final class JobManagerInfoCache {
                                         case DELETED:
                                             LOG.info("DELETE jobmanager info cache: {}", clusterId);
                                             cache.invalidate(clusterId);
+                                            break;
                                         default:
                                             break;
                                     }

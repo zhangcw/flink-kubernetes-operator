@@ -120,6 +120,11 @@ public abstract class AbstractJobReconciler<
 
         JobState currentJobState = lastReconciledSpec.getJob().getState();
         JobState desiredJobState = currentDeploySpec.getJob().getState();
+        LOG.info(
+                "currentJobState: {}, desiredJobState: {}, diffType: {}",
+                currentJobState,
+                desiredJobState,
+                diffType);
 
         if (diffType == DiffType.SAVEPOINT_REDEPLOY) {
             redeployWithSavepoint(
