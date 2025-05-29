@@ -17,9 +17,21 @@
 ################################################################################
 # Build
 ARG JAVA_VERSION=11
-FROM maven:3.8.8-eclipse-temurin-${JAVA_VERSION} AS build
+FROM mirrors.tencent.com/tjdk/tencentkona${JAVA_VERSION}-ts4 AS build
 ARG SKIP_TESTS=true
 ARG HTTP_CLIENT=okhttp
+ARG MAVEN_HOME=/opt/apache-maven-3.8.8
+
+WORKDIR /opt
+RUN set -ex \
+    && yum -y update \
+    && yum install -y wget \
+    && wget -O maven.tar.gz "https://mirrors.tencent.com/apache/maven/maven-3/3.8.8/binaries/apache-maven-3.8.8-bin.tar.gz" \
+    && mkdir -p $MAVEN_HOME \
+    && tar -xvzf maven.tar.gz -C /opt/apache-maven-3.8.8 --strip-components 1 \
+    && ls -alh \
+    && rm maven.tar.gz
+ENV PATH=${MAVEN_HOME}/bin:$PATH
 
 WORKDIR /app
 
@@ -36,7 +48,7 @@ RUN cd /app/tools/license; mkdir jars; cd jars; \
     cd ../ && ./collect_license_files.sh ./jars ./licenses-output
 
 # stage
-FROM eclipse-temurin:${JAVA_VERSION}-jre-jammy
+FROM mirrors.tencent.com/tjdk/tencentkona${JAVA_VERSION}-ts4
 ENV FLINK_HOME=/opt/flink
 ENV FLINK_PLUGINS_DIR=$FLINK_HOME/plugins
 ENV OPERATOR_VERSION=1.11.1
@@ -69,15 +81,14 @@ COPY --chown=flink:flink docker-entrypoint.sh /
 ARG SKIP_OS_UPDATE=true
 
 # Updating Debian
-RUN if [ "$SKIP_OS_UPDATE" = "false" ]; then apt-get update; fi
-RUN if [ "$SKIP_OS_UPDATE" = "false" ]; then apt-get upgrade -y; fi
+RUN if [ "$SKIP_OS_UPDATE" = "false" ]; then yum update -y; fi
+RUN if [ "$SKIP_OS_UPDATE" = "false" ]; then yum upgrade -y; fi
 
 ARG DISABLE_JEMALLOC=false
 # Install jemalloc
 RUN if [ "$DISABLE_JEMALLOC" = "false" ]; then \
-  apt-get update; \
-  apt-get -y install libjemalloc-dev lrzsz; \
-  rm -rf /var/lib/apt/lists/*; \
+  yum update; \
+  yum -y install jemalloc lrzsz; \
   fi
 
 USER flink
