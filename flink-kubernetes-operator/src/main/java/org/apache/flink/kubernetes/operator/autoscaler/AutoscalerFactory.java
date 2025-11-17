@@ -19,9 +19,9 @@ package org.apache.flink.kubernetes.operator.autoscaler;
 
 import org.apache.flink.autoscaler.JobAutoScaler;
 import org.apache.flink.autoscaler.JobAutoScalerImpl;
-import org.apache.flink.autoscaler.RestApiMetricsCollector;
 import org.apache.flink.autoscaler.ScalingExecutor;
 import org.apache.flink.autoscaler.ScalingMetricEvaluator;
+import org.apache.flink.autoscaler.VmScalingMetricCollector;
 import org.apache.flink.autoscaler.event.AutoScalerEventHandler;
 import org.apache.flink.autoscaler.jdbc.event.JdbcAutoScalerEventHandler;
 import org.apache.flink.autoscaler.jdbc.event.JdbcEventInteractor;
@@ -60,7 +60,8 @@ public class AutoscalerFactory {
                 createEventHandler(config, eventRecorder);
 
         return new JobAutoScalerImpl<>(
-                new RestApiMetricsCollector<>(),
+                // new RestApiMetricsCollector<>(),
+                new VmScalingMetricCollector<>(),
                 new ScalingMetricEvaluator(),
                 new ScalingExecutor<>(eventHandler, stateStore, clusterResourceManager),
                 eventHandler,

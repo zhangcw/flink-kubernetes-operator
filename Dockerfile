@@ -20,15 +20,15 @@ ARG JAVA_VERSION=11
 FROM mirrors.tencent.com/tjdk/tencentkona${JAVA_VERSION}-ts4 AS build
 ARG SKIP_TESTS=true
 ARG HTTP_CLIENT=okhttp
-ARG MAVEN_HOME=/opt/apache-maven-3.8.8
+ARG MAVEN_HOME=/opt/apache-maven-3.8.9
 
 WORKDIR /opt
 RUN set -ex \
     && yum -y update \
     && yum install -y wget \
-    && wget -O maven.tar.gz "https://mirrors.tencent.com/apache/maven/maven-3/3.8.8/binaries/apache-maven-3.8.8-bin.tar.gz" \
+    && wget -O maven.tar.gz "https://mirrors.tencent.com/apache/maven/maven-3/3.8.9/binaries/apache-maven-3.8.9-bin.tar.gz" \
     && mkdir -p $MAVEN_HOME \
-    && tar -xvzf maven.tar.gz -C /opt/apache-maven-3.8.8 --strip-components 1 \
+    && tar -xvzf maven.tar.gz -C /opt/apache-maven-3.8.9 --strip-components 1 \
     && ls -alh \
     && rm maven.tar.gz
 ENV PATH=${MAVEN_HOME}/bin:$PATH
@@ -51,7 +51,7 @@ RUN cd /app/tools/license; mkdir jars; cd jars; \
 FROM mirrors.tencent.com/tjdk/tencentkona${JAVA_VERSION}-ts4
 ENV FLINK_HOME=/opt/flink
 ENV FLINK_PLUGINS_DIR=$FLINK_HOME/plugins
-ENV OPERATOR_VERSION=1.11.1
+ENV OPERATOR_VERSION=1.11.2
 ENV FLINK_LOG_DIR=$FLINK_HOME/logs
 ENV OPERATOR_JAR=flink-kubernetes-operator-$OPERATOR_VERSION-shaded.jar
 ENV WEBHOOK_JAR=flink-kubernetes-webhook-$OPERATOR_VERSION-shaded.jar

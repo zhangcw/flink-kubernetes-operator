@@ -206,7 +206,7 @@ public abstract class ScalingMetricCollector<KEY, Context extends JobAutoScalerC
         return conf.get(AutoScalerOptions.SCALE_UP_MIN_METRICS_WINDOW);
     }
 
-    private static Instant getWindowFullTime(
+    protected static Instant getWindowFullTime(
             SortedMap<Instant, CollectedMetrics> metricsAfterStable,
             Instant now,
             Duration metricWindowSize) {

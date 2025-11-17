@@ -411,47 +411,54 @@ public class AutoScalerOptions {
                     .withFallbackKeys(oldOperatorConfigKey("fixed_tm_slots"))
                     .withDescription("Whether taskmanager slots number is fixed.");
 
-    public static final ConfigOption<String> EXTERNAL_CPU_METRICS_QUERY_URL =
-            autoScalerConfig("external-cpu-metrics.query-url")
+    public static final ConfigOption<String> BK_BASE_CPU_METRICS_QUERY_URL =
+            autoScalerConfig("bk-base-cpu-metrics.query-url")
                     .stringType()
                     .defaultValue(null)
-                    .withFallbackKeys(oldOperatorConfigKey("external-cpu-metrics.query-url"))
-                    .withDescription("Query url of external cpu metrics.");
+                    .withFallbackKeys(oldOperatorConfigKey("bk-base-cpu-metrics.query-url"))
+                    .withDescription("Query url of bk-base cpu metrics.");
 
-    public static final ConfigOption<String> EXTERNAL_CPU_METRICS_QUERY_SQL_TEMPLATE =
-            autoScalerConfig("external-cpu-metrics.query-sql-template")
+    public static final ConfigOption<String> BK_BASE_CPU_METRICS_QUERY_SQL_TEMPLATE =
+            autoScalerConfig("bk-base-cpu-metrics.query-sql-template")
                     .stringType()
                     .defaultValue(null)
                     .withFallbackKeys(
-                            oldOperatorConfigKey("external-cpu-metrics.query-sql-template"))
-                    .withDescription("Query sql template of external cpu metrics.");
+                            oldOperatorConfigKey("bk-base-cpu-metrics.query-sql-template"))
+                    .withDescription("Query sql template of bk-base cpu metrics.");
 
-    public static final ConfigOption<String> EXTERNAL_CPU_METRICS_QUERY_TABLE =
-            autoScalerConfig("external-cpu-metrics.query-table-name")
+    public static final ConfigOption<String> BK_BASE_CPU_METRICS_QUERY_TABLE =
+            autoScalerConfig("bk-base-cpu-metrics.query-table-name")
                     .stringType()
                     .defaultValue(null)
-                    .withFallbackKeys(oldOperatorConfigKey("external-cpu-metrics.query-table"))
-                    .withDescription("Query table name of external cpu metrics.");
+                    .withFallbackKeys(oldOperatorConfigKey("bk-base-cpu-metrics.query-table"))
+                    .withDescription("Query table name of bk-base cpu metrics.");
 
-    public static final ConfigOption<String> EXTERNAL_CPU_METRICS_QUERY_TABLE_PREFER_STORAGE =
-            autoScalerConfig("external-cpu-metrics.query-table-prefer-storage")
+    public static final ConfigOption<String> BK_BASE_CPU_METRICS_QUERY_TABLE_PREFER_STORAGE =
+            autoScalerConfig("bk-base-cpu-metrics.query-table-prefer-storage")
                     .stringType()
                     .defaultValue(null)
                     .withFallbackKeys(
-                            oldOperatorConfigKey("external-cpu-metrics.query-table-prefer-storage"))
-                    .withDescription("Query table prefer storage of external cpu metrics.");
+                            oldOperatorConfigKey("bk-base-cpu-metrics.query-table-prefer-storage"))
+                    .withDescription("Query table prefer storage of bk-base cpu metrics.");
 
-    public static final ConfigOption<String> EXTERNAL_CPU_METRICS_QUERY_APP_CODE =
-            autoScalerConfig("external-cpu-metrics.query-app-code")
+    public static final ConfigOption<String> BK_BASE_APP_CODE =
+            autoScalerConfig("bk-base.app-code")
                     .stringType()
                     .defaultValue(null)
-                    .withFallbackKeys(oldOperatorConfigKey("external-cpu-metrics.query-app-code"))
-                    .withDescription("app code to query external cpu metrics.");
+                    .withFallbackKeys(oldOperatorConfigKey("bk-base.app-code"))
+                    .withDescription("app code for querying bk-base api.");
 
-    public static final ConfigOption<String> EXTERNAL_CPU_METRICS_QUERY_APP_SECRET =
-            autoScalerConfig("external-cpu-metrics.query-app-secret")
+    public static final ConfigOption<String> BK_BASE_APP_SECRET =
+            autoScalerConfig("bk-base.app-secret")
                     .stringType()
                     .defaultValue(null)
-                    .withFallbackKeys(oldOperatorConfigKey("external-cpu-metrics.query-app-secret"))
-                    .withDescription("app secret to query external cpu metrics.");
+                    .withFallbackKeys(oldOperatorConfigKey("bk-base.app-secret"))
+                    .withDescription("app secret for querying bk-base api.");
+
+    public static final ConfigOption<String> BK_BASE_VM_METRICS_QUERY_URL =
+            autoScalerConfig("bk-base-vm-metrics.query-url")
+                    .stringType()
+                    .defaultValue(null)
+                    .withFallbackKeys(oldOperatorConfigKey("bk-base-vm-metrics.query-url"))
+                    .withDescription("Query url of bk-base vm metrics.");
 }

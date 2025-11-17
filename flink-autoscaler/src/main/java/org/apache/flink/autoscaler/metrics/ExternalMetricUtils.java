@@ -51,13 +51,13 @@ public class ExternalMetricUtils {
             JobAutoScalerContext context, Instant startTime, Instant endTime) {
         Configuration conf = context.getConfiguration();
         String jobId = conf.get(KubernetesConfigOptions.CLUSTER_ID);
-        String httpUrl = conf.get(AutoScalerOptions.EXTERNAL_CPU_METRICS_QUERY_URL);
-        String sqlTemplate = conf.get(AutoScalerOptions.EXTERNAL_CPU_METRICS_QUERY_SQL_TEMPLATE);
-        String tableName = conf.get(AutoScalerOptions.EXTERNAL_CPU_METRICS_QUERY_TABLE);
+        String httpUrl = conf.get(AutoScalerOptions.BK_BASE_CPU_METRICS_QUERY_URL);
+        String sqlTemplate = conf.get(AutoScalerOptions.BK_BASE_CPU_METRICS_QUERY_SQL_TEMPLATE);
+        String tableName = conf.get(AutoScalerOptions.BK_BASE_CPU_METRICS_QUERY_TABLE);
         String preferStorage =
-                conf.get(AutoScalerOptions.EXTERNAL_CPU_METRICS_QUERY_TABLE_PREFER_STORAGE);
-        String appCode = conf.get(AutoScalerOptions.EXTERNAL_CPU_METRICS_QUERY_APP_CODE);
-        String appSecret = conf.get(AutoScalerOptions.EXTERNAL_CPU_METRICS_QUERY_APP_SECRET);
+                conf.get(AutoScalerOptions.BK_BASE_CPU_METRICS_QUERY_TABLE_PREFER_STORAGE);
+        String appCode = conf.get(AutoScalerOptions.BK_BASE_APP_CODE);
+        String appSecret = conf.get(AutoScalerOptions.BK_BASE_APP_SECRET);
         // 没有配置查询url的情况下返回null，不抛出异常
         if (httpUrl.isEmpty()) {
             return null;

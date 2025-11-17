@@ -208,7 +208,6 @@ public class JobAutoScalerImpl<KEY, Context extends JobAutoScalerContext<KEY>>
         if (collectedMetrics.getMetricHistory().size() < 2) {
             return;
         }
-        LOG.debug("Collected metrics: {}", collectedMetrics);
 
         // Scaling tracking data contains previous restart times that are taken into account
         var restartTime = scalingTracking.getMaxRestartTimeOrDefault(ctx.getConfiguration());
